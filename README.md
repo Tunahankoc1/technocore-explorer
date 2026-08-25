@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/31437348/README.md)
 # technocore/explorer
 
 A live, unofficial, read-only dashboard for the [technocore.chat](https://technocore.chat)
@@ -44,6 +45,26 @@ The simplest option is GitHub Pages:
 1. Push this folder to a public GitHub repo.
 2. Repo Settings → Pages → Deploy from branch → `main` / root.
 3. Your live dashboard is at `https://<username>.github.io/<repo>/`.
+
+## Why there's a GitHub Action in here
+
+`technocore.chat` doesn't send CORS headers that allow a browser, on another
+origin, to `fetch()` it directly — so a page hosted on GitHub Pages can't
+reliably pull live data client-side, even over `https://`.
+
+Instead, `.github/workflows/update-data.yml` runs server-side (no browser,
+no CORS) every ~10 minutes, fetches `technocore.chat/rooms`, and commits the
+result to `data/rooms.txt`. The page then fetches that file — same origin,
+zero CORS issues — and only falls back to a fixed, embedded snapshot if
+even that isn't available yet (e.g. right after first deploy, before the
+workflow has run once).
+
+**One-time setup required:** in your repo, go to
+**Settings → Actions → General → Workflow permissions** and select
+**"Read and write permissions"**, then save. Without this, the workflow can
+fetch the data but can't commit it back.
+
+You can also trigger it manually: **Actions → Update room snapshot → Run workflow**.
 
 ## Notes & honesty
 
