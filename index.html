@@ -292,7 +292,8 @@
 (function(){
   "use strict";
 
-  var ROOMS_URL = "https://technocore.chat/rooms";
+  var LIVE_URL = "https://technocore.chat/rooms";
+  var LOCAL_URL = "data/rooms.txt"; // refreshed every ~10 min by .github/workflows/update-data.yml
   var POLL_MS = 60000;
   var DECAY_SECONDS = 7 * 24 * 3600; // 7 day idle limit the server enforces
 
@@ -415,6 +416,8 @@
         if(m2){ meta.notesUsed = +m2[1]; meta.notesCap = +m2[2]; meta.notesTotal = m2[3]; }
         var m3 = /^#\s*engagement over (\d+) msgs scanned:\s*zero-response\s+(\d+)%,\s*nick diversity\s+([\d.]+),\s*notes\/msg\s+([\d.]+)/.exec(line);
         if(m3){ meta.msgsScanned=+m3[1]; meta.zeroResponse=+m3[2]; meta.nickDiversity=+m3[3]; meta.notesPerMsg=+m3[4]; }
+        var m4 = /^#\s*fetched_at\s+(\S+)/.exec(line);
+        if(m4){ meta.fetchedAtServer = m4[1]; }
         return;
       }
       var m = /^\/r\/(\S+)\s+seq\s+(\d+)\s+([\d.]+[KMGB]?)\s+([\d.]+[smhd])\s+ago(?:\s*·\s*(.*))?$/.exec(line);
@@ -447,40 +450,64 @@
 
   function loadLive(){
     setStatus(true, "fetching…");
-    fetch(ROOMS_URL, { mode: "cors", cache: "no-store" })
-      .then(function(res){
-        if(!res.ok) throw new Error("HTTP "+res.status);
-        return res.text();
-      })
-      .then(function(text){
-        applyData(text, true);
-      })
-      .catch(function(err){
-        console.warn("live fetch failed, using fallback snapshot:", err);
-        showCorsBanner();
-        if(state.rooms.length === 0){
-          applyData(FALLBACK_TEXT, false);
-        } else {
-          setStatus(false, "live fetch failed — showing last successful data");
-        }
+    hideCorsBanner();
+
+    // Tier 1: same-origin snapshot committed by .github/workflows/update-data.yml
+    // (refreshed ~every 10 min server-side, so it never hits browser CORS at all).
+    fetchText(LOCAL_URL + "?t=" + Date.now())
+      .then(function(text){ applyData(text, "synced"); })
+      .catch(function(){
+        // Tier 2: try a direct cross-origin fetch, in case the viewer's browser
+        // and technocore.chat's CORS policy happen to allow it.
+        return fetchText(LIVE_URL)
+          .then(function(text){ applyData(text, "live"); })
+          .catch(function(err){
+            console.warn("both live and synced fetch failed, using embedded fallback:", err);
+            showCorsBanner();
+            if(state.rooms.length === 0){
+              applyData(FALLBACK_TEXT, "fallback");
+            } else {
+              setStatus(false, "refresh failed — showing last successful data");
+            }
+          });
       });
+  }
+
+  function fetchText(url){
+    return fetch(url, { mode: "cors", cache: "no-store" }).then(function(res){
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      return res.text();
+    });
   }
 
   function showCorsBanner(){
     var b = document.getElementById("cors-banner");
     var t = document.getElementById("cors-banner-text");
-    t.innerHTML = "Live fetch to <code class='inline'>technocore.chat</code> was blocked by the browser (likely CORS) or the network. " +
-      "Showing a cached snapshot instead. Try “refresh now”, opening this file over <code class='inline'>https://</code> " +
-      "rather than <code class='inline'>file://</code>, or hosting it (e.g. GitHub Pages) so the request has a proper origin.";
+    t.innerHTML = "Couldn't load <code class='inline'>data/rooms.txt</code> (the CI-refreshed snapshot) or reach " +
+      "<code class='inline'>technocore.chat</code> directly (blocked by CORS, as expected for a cross-origin browser fetch). " +
+      "Showing a fixed snapshot captured while building this tool instead. Once <code class='inline'>.github/workflows/update-data.yml</code> " +
+      "has run at least once on this repo, <code class='inline'>data/rooms.txt</code> will exist and this banner should disappear.";
     b.classList.add("show");
   }
+  function hideCorsBanner(){
+    document.getElementById("cors-banner").classList.remove("show");
+  }
 
-  function applyData(text, isLive){
+  function applyData(text, source){
     var parsed = parseRooms(text);
     state.rooms = parsed.rooms;
     state.meta = parsed.meta;
     state.fetchedAt = new Date();
-    setStatus(isLive, isLive ? ("live · updated "+state.fetchedAt.toLocaleTimeString()) : "showing cached snapshot");
+    var label;
+    if(source === "live"){
+      label = "live · updated " + state.fetchedAt.toLocaleTimeString();
+    } else if(source === "synced"){
+      var srv = parsed.meta.fetchedAtServer;
+      label = "synced" + (srv ? " · snapshot from " + srv : "") + " · refreshes ~every 10 min";
+    } else {
+      label = "showing cached snapshot";
+    }
+    setStatus(source !== "fallback", label);
     render();
   }
 
