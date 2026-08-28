@@ -1,83 +1,88 @@
-[README.md](https://github.com/user-attachments/files/31437348/README.md)
 # technocore/explorer
 
 A live, unofficial, read-only dashboard for the [technocore.chat](https://technocore.chat)
-agent network.
+agent network — with a real-time feed of newly created rooms.
 
 `technocore.chat` is a chat server whose users are AI agents: every operation,
 including posting, is a single plain `GET` request. Rooms live in a ~10 MiB ring
-buffer, and anything idle for 7 days is deleted. This project fetches the
-public, unauthenticated `GET /rooms` feed and turns it into:
+buffer, and anything idle for 7 days is deleted.
 
 - **The Ring** — an SVG visualization where each room is a dot. Distance from
   the center encodes how long since the room's last message (center = fresh,
   edge = about to age out of the 7-day ring). Dot size encodes message volume.
   Color encodes a detected "cluster" — rooms sharing a name prefix, which
   usually means the same bot or script spun them up.
+- **Live room feed** — a ticker at the top that long-polls `GET /r/events`
+  and shows newly created public rooms within seconds of them appearing.
 - **Live stats** — total rooms, storage used, notes stored, and the server's
   own engagement metrics (zero-response rate, nick diversity).
 - **Clusters & busiest rooms** — which naming patterns are most repeated, and
   which rooms have the most all-time messages.
 - **A sortable, filterable room log** — the raw snapshot as a table.
 
-It calls no private or authenticated endpoint. It reads exactly the same
-`GET /rooms` route documented at
-[technocore.chat/humans](https://technocore.chat/humans) and
-[technocore.chat/llms.txt](https://technocore.chat/llms.txt), and writes
+It calls no private or authenticated endpoint — only `GET /rooms` and
+`GET /r/<room>`, documented at [technocore.chat/humans](https://technocore.chat/humans)
+and [technocore.chat/llms.txt](https://technocore.chat/llms.txt) — and writes
 nothing back to the network.
 
-## Running it
+## Architecture
 
-No build step, no dependencies. It's a single static HTML file.
+`technocore.chat` doesn't send CORS headers, so a browser can't `fetch()` it
+directly from another origin — no static host, however it's served, can pull
+truly live data client-side on its own.
+
+This project solves that with **`api/proxy/[...path].js`**, a small
+[Vercel Edge Function](https://vercel.com/docs/functions/edge-functions) that
+forwards requests to `technocore.chat` from the *same origin* as the page —
+so the browser never hits CORS at all, and can even hold open the long-poll
+requests (`?wait=9`) that power the live events ticker.
+
+The proxy is intentionally narrow: it only forwards `GET /rooms` and
+`GET /r/<name>` (regex-whitelisted). It will never forward write endpoints
+like `/r/<room>/say/...` or `/kv/.../set/...`, so it can't be used to post to
+the network on anyone's behalf.
+
+## Deploying (Vercel)
+
+This repo is zero-config for Vercel — static `index.html` at the root, plus
+the `api/proxy` Edge Function.
+
+1. Push this repo to GitHub (or GitLab/Bitbucket).
+2. Go to [vercel.com/new](https://vercel.com/new), import the repo.
+3. Framework preset: **Other**. No build command, no output directory needed.
+4. Deploy. Your dashboard is live at `https://<project>.vercel.app`.
+
+That's it — no environment variables, no extra setup. The proxy and the page
+ship together.
+
+## Running it locally
 
 ```bash
-# just open it
-open index.html
-
-# or serve it (recommended, avoids some browsers' file:// fetch restrictions)
-npx serve .
+npm i -g vercel
+vercel dev
 ```
 
-## Deploying it (for a public link / contribution URL)
-
-The simplest option is GitHub Pages:
-
-1. Push this folder to a public GitHub repo.
-2. Repo Settings → Pages → Deploy from branch → `main` / root.
-3. Your live dashboard is at `https://<username>.github.io/<repo>/`.
-
-## Why there's a GitHub Action in here
-
-`technocore.chat` doesn't send CORS headers that allow a browser, on another
-origin, to `fetch()` it directly — so a page hosted on GitHub Pages can't
-reliably pull live data client-side, even over `https://`.
-
-Instead, `.github/workflows/update-data.yml` runs server-side (no browser,
-no CORS) every ~10 minutes, fetches `technocore.chat/rooms`, and commits the
-result to `data/rooms.txt`. The page then fetches that file — same origin,
-zero CORS issues — and only falls back to a fixed, embedded snapshot if
-even that isn't available yet (e.g. right after first deploy, before the
-workflow has run once).
-
-**One-time setup required:** in your repo, go to
-**Settings → Actions → General → Workflow permissions** and select
-**"Read and write permissions"**, then save. Without this, the workflow can
-fetch the data but can't commit it back.
-
-You can also trigger it manually: **Actions → Update room snapshot → Run workflow**.
+`vercel dev` serves `index.html` and runs `api/proxy` locally together, so
+the live feed and live room list both work exactly as they will in
+production. Opening `index.html` directly (`file://`) will **not** work for
+the live features, since there's no proxy to talk to — you'll see the
+embedded fallback snapshot and a banner explaining why.
 
 ## Notes & honesty
 
-- `GET /rooms` returns the **newest 50 of however many rooms currently exist**
-  (the header line says so explicitly, e.g. `# 50 of 1591 rooms`). This tool
-  shows that snapshot and refreshes it every 60 seconds — it is not a full
+- `GET /rooms` returns the **newest 50 of however many rooms currently
+  exist** (the header line says so explicitly, e.g. `# 50 of 1591 rooms`).
+  This tool shows that snapshot and refreshes it live — it is not a full
   census of the network, and doesn't claim to be.
-- Cluster detection is a simple heuristic (shared name prefix, minus a
-  trailing random-looking token), not something the server reports directly.
-- If the live fetch is blocked by the browser (CORS) or network, the page
-  falls back to a real snapshot captured while building this tool, and says
-  so clearly in an on-page banner — it never silently shows stale data as if
-  it were live.
+- The live events ticker only shows rooms *created after you opened the
+  page* — it has no history before that (the server itself only guarantees
+  a rolling window on `/r/events`).
+- Cluster detection is a simple heuristic (shared name prefix), not
+  something the server reports directly.
+- If the proxy is unreachable (e.g. viewing `index.html` locally without
+  `vercel dev`, or before first deploy), the page falls back to a fixed
+  snapshot captured while building this tool, and says so clearly in an
+  on-page banner — it never silently shows stale data as if it were live.
 
 ## License
 
