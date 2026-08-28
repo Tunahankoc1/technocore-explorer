@@ -127,6 +127,17 @@
   .ring-legend .item{display:flex;align-items:center;gap:6px;}
   .swatch{width:9px;height:9px;border-radius:50%;display:inline-block;}
 
+  @keyframes dotIn{
+    from{ opacity:0; transform:scale(0.25); }
+    to{ opacity:1; transform:scale(1); }
+  }
+  .room-dot{
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dotIn .6s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  @keyframes spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
+
   .tooltip{
     position:fixed;pointer-events:none;
     background:var(--slate-2);border:1px solid var(--hair);
@@ -651,6 +662,20 @@
     return clusterColorCache[room.cluster];
   }
 
+  // Fixed "starfield" — generated once, cached, so it doesn't jitter on every redraw.
+  var STAR_FIELD = null;
+  function starField(){
+    if(STAR_FIELD) return STAR_FIELD;
+    var seed = 1337, stars = [];
+    function rnd(){ seed = (seed*1103515245 + 12345) % 2147483648; return seed/2147483648; }
+    for(var i=0;i<70;i++){
+      var ang = rnd()*Math.PI*2, rad = 20 + rnd()*(MAXR+14);
+      stars.push({ x: CX+Math.cos(ang)*rad, y: CY+Math.sin(ang)*rad, r: 0.5+rnd()*1.1, o: 0.08+rnd()*0.22 });
+    }
+    STAR_FIELD = stars;
+    return stars;
+  }
+
   function renderRing(){
     clusterColorCache = {}; // reassign colors deterministically each render pass, biggest clusters first
     var clusters = computeClusters();
@@ -659,41 +684,101 @@
     var svg = document.getElementById("ring-svg");
     var parts = [];
 
-    // concentric guide rings
+    // ---- defs: soft glow filter + background wash + sweep gradient ----
+    parts.push(
+      '<defs>' +
+        '<filter id="dotGlow" x="-120%" y="-120%" width="340%" height="340%">' +
+          '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />' +
+          '<feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>' +
+        '</filter>' +
+        '<radialGradient id="bgWash" cx="50%" cy="50%" r="50%">' +
+          '<stop offset="0%" stop-color="#1a2c4a" stop-opacity="0.55" />' +
+          '<stop offset="55%" stop-color="#101a30" stop-opacity="0.25" />' +
+          '<stop offset="100%" stop-color="#0a0f1c" stop-opacity="0" />' +
+        '</radialGradient>' +
+        '<linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">' +
+          '<stop offset="0%" stop-color="#4fd1c5" stop-opacity="0" />' +
+          '<stop offset="100%" stop-color="#4fd1c5" stop-opacity="0.28" />' +
+        '</linearGradient>' +
+      '</defs>'
+    );
+
+    // ---- ambient background wash + static starfield ----
+    parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="'+(MAXR+18)+'" fill="url(#bgWash)" />');
+    starField().forEach(function(s){
+      parts.push('<circle cx="'+s.x.toFixed(1)+'" cy="'+s.y.toFixed(1)+'" r="'+s.r.toFixed(2)+'" fill="#8ea0c8" fill-opacity="'+s.o.toFixed(2)+'" />');
+    });
+
+    // ---- concentric guide rings ----
     var guideFractions = [0.2,0.45,0.7,1.0];
     var guideLabels = ["fresh","minutes","hours","~7d (decay)"];
     guideFractions.forEach(function(f, i){
       var r = MINR + f*(MAXR-MINR);
-      parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="'+r+'" fill="none" stroke="#1f2a42" stroke-width="1" />');
+      parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="'+r+'" fill="none" stroke="#22304e" stroke-width="1" stroke-dasharray="1.5 4" />');
       parts.push('<text x="'+(CX+6)+'" y="'+(CY-r-4)+'" fill="#5b6786" font-family="JetBrains Mono, monospace" font-size="9.5">'+guideLabels[i]+'</text>');
     });
 
-    // sweep line (decorative, subtle)
+    // ---- outer tick marks (radar-screen feel) ----
+    for(var t=0; t<24; t++){
+      var tAng = (t/24)*Math.PI*2;
+      var r1 = MAXR+2, r2 = (t%6===0) ? MAXR+11 : MAXR+6;
+      parts.push('<line x1="'+(CX+Math.cos(tAng)*r1).toFixed(1)+'" y1="'+(CY+Math.sin(tAng)*r1).toFixed(1)+
+        '" x2="'+(CX+Math.cos(tAng)*r2).toFixed(1)+'" y2="'+(CY+Math.sin(tAng)*r2).toFixed(1)+
+        '" stroke="#2a3a5c" stroke-width="'+(t%6===0?1.2:0.7)+'" />');
+    }
+
+    // ---- radar sweep wedge (gradient, slow rotation) ----
+    var wedgeDeg = 26;
+    var a1 = 0, a2 = wedgeDeg*Math.PI/180;
+    var wx1 = CX+Math.cos(a1)*MAXR, wy1 = CY+Math.sin(a1)*MAXR;
+    var wx2 = CX+Math.cos(a2)*MAXR, wy2 = CY+Math.sin(a2)*MAXR;
     parts.push(
-      '<g style="transform-origin:'+CX+'px '+CY+'px;animation:spin 14s linear infinite;">' +
-      '<line x1="'+CX+'" y1="'+CY+'" x2="'+CX+'" y2="'+(CY-MAXR)+'" stroke="#4fd1c5" stroke-width="1" opacity="0.18" />' +
+      '<g style="transform-origin:'+CX+'px '+CY+'px;animation:spin 20s linear infinite;">' +
+        '<path d="M'+CX+' '+CY+' L'+wx1.toFixed(1)+' '+wy1.toFixed(1)+' A'+MAXR+' '+MAXR+' 0 0 1 '+wx2.toFixed(1)+' '+wy2.toFixed(1)+' Z" fill="url(#sweepGrad)" />' +
+        '<line x1="'+CX+'" y1="'+CY+'" x2="'+wx1.toFixed(1)+'" y2="'+wy1.toFixed(1)+'" stroke="#4fd1c5" stroke-width="1" opacity="0.35" />' +
       '</g>'
     );
 
-    // dots
+    // ---- dots (busiest 3 + core rooms get a soft glow + staggered fade-in) ----
     var sorted = state.rooms.slice().sort(function(a,b){ return dotRadius(b.seq)-dotRadius(a.seq); });
-    sorted.forEach(function(r){
+    var glowNames = {};
+    sorted.slice(0,3).forEach(function(r){ glowNames[r.name] = true; });
+    sorted.forEach(function(r, i){
       var ang = stableAngle(r.name);
       var rad = ringRadius(r.idleSeconds);
       var x = CX + Math.cos(ang)*rad;
       var y = CY + Math.sin(ang)*rad;
       var dr = dotRadius(r.seq);
       var col = colorFor(r);
-      var opacity = Math.max(0.35, 1 - (rad/MAXR)*0.5);
-      parts.push('<circle class="room-dot" data-name="'+r.name+'" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+dr.toFixed(1)+'" fill="'+col+'" fill-opacity="'+opacity.toFixed(2)+'" stroke="#0a0f1c" stroke-width="1" style="cursor:pointer;" />');
+      var isCore = (r.name === "lobby" || r.name === "technocore" || r.name === "events");
+      var opacity = Math.max(0.4, 1 - (rad/MAXR)*0.45);
+      var delay = Math.min(i*14, 500);
+      var useGlow = isCore || glowNames[r.name];
+
+      if(isCore){
+        // radar "ping" ring pulsing outward from core rooms
+        parts.push(
+          '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="6" fill="none" stroke="'+col+'" stroke-width="1.4" opacity="0.6">' +
+            '<animate attributeName="r" values="'+dr.toFixed(1)+';'+(dr+20).toFixed(1)+'" dur="2.6s" repeatCount="indefinite" />' +
+            '<animate attributeName="opacity" values="0.55;0" dur="2.6s" repeatCount="indefinite" />' +
+          '</circle>'
+        );
+      }
+
+      parts.push('<circle class="room-dot" data-name="'+r.name+'" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+dr.toFixed(1)+
+        '" fill="'+col+'" fill-opacity="'+opacity.toFixed(2)+'" stroke="#0a0f1c" stroke-width="1" ' +
+        (useGlow ? 'filter="url(#dotGlow)" ' : '') +
+        'style="cursor:pointer;animation-delay:'+delay+'ms;" />');
     });
 
-    // center core
-    parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="4" fill="#edeff5" />');
+    // ---- center core (glowing "now" marker) ----
+    parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="8" fill="none" stroke="#edeff5" stroke-width="1" opacity="0.5">' +
+      '<animate attributeName="r" values="4;14" dur="2.2s" repeatCount="indefinite" />' +
+      '<animate attributeName="opacity" values="0.5;0" dur="2.2s" repeatCount="indefinite" />' +
+    '</circle>');
+    parts.push('<circle cx="'+CX+'" cy="'+CY+'" r="4" fill="#edeff5" filter="url(#dotGlow)" />');
 
-    svg.innerHTML =
-      '<style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>' +
-      parts.join("");
+    svg.innerHTML = parts.join("");
 
     // legend
     var legendEl = document.getElementById("ring-legend");
