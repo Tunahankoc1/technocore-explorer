@@ -511,9 +511,10 @@
   function showCorsBanner(){
     var b = document.getElementById("cors-banner");
     var t = document.getElementById("cors-banner-text");
-    t.innerHTML = "Couldn't reach <code class='inline'>" + PROXY_BASE + "/rooms</code>. " +
-      "If you're viewing this straight from GitHub or a local file, the proxy only exists once this is deployed on Vercel " +
-      "(see <code class='inline'>api/proxy/[...path].js</code> in the repo). Showing a fixed snapshot captured while building this tool instead.";
+    t.innerHTML = "Couldn't reach <code class='inline'>" + PROXY_BASE + "/rooms</code> just now — this can happen briefly " +
+      "(a cold start, or technocore.chat being momentarily slow) and usually clears up on its own within a poll cycle or two. " +
+      "If you're viewing this straight from GitHub or a local file rather than the deployed Vercel site, the proxy won't exist at all " +
+      "(see <code class='inline'>api/proxy.js</code> and <code class='inline'>vercel.json</code> in the repo). Showing a fixed snapshot captured while building this tool instead.";
     b.classList.add("show");
   }
   function hideCorsBanner(){
