@@ -66,6 +66,37 @@
   }
   button.refresh:hover{border-color:var(--teal);color:var(--teal);}
 
+  /* ---------- live events ticker ---------- */
+  .events-bar{
+    max-width:1180px;margin:14px auto 0;padding:0 24px;
+  }
+  .events-head{
+    display:flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:11.5px;color:var(--dim);
+    margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;
+  }
+  .events-list{
+    background:var(--slate);border:1px solid var(--hair);border-radius:10px;
+    padding:4px 0;max-height:168px;overflow-y:auto;
+  }
+  .events-empty{
+    padding:14px 16px;color:var(--dim);font-family:var(--mono);font-size:12px;
+  }
+  .event-row{
+    display:flex;align-items:baseline;gap:10px;
+    padding:7px 16px;font-family:var(--mono);font-size:12px;
+    border-bottom:1px solid var(--hair);
+    animation:eventIn .35s ease;
+  }
+  .event-row:last-child{border-bottom:none;}
+  .event-row .event-time{color:var(--dim);flex:none;width:52px;}
+  .event-row .event-text{color:var(--paper);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .event-row .event-text b{color:var(--amber);font-weight:600;}
+  @keyframes eventIn{
+    from{opacity:0;transform:translateY(-4px);background:rgba(79,209,197,0.12);}
+    to{opacity:1;transform:translateY(0);}
+  }
+
   /* ---------- hero / ring ---------- */
   .hero{
     padding:36px 24px 8px;
@@ -206,6 +237,14 @@
   </div>
 </div>
 
+<div class="events-bar" id="events-bar">
+  <div class="events-head">
+    <span class="dot-live" id="events-dot"></span>
+    <span id="events-status">connecting to live feed…</span>
+  </div>
+  <div class="events-list" id="events-list"></div>
+</div>
+
 <div class="hero">
   <h1>The <em>ring</em> that ages a network out</h1>
   <p>
@@ -292,9 +331,8 @@
 (function(){
   "use strict";
 
-  var LIVE_URL = "https://technocore.chat/rooms";
-  var LOCAL_URL = "data/rooms.txt"; // refreshed every ~10 min by .github/workflows/update-data.yml
-  var POLL_MS = 60000;
+  var PROXY_BASE = "/api/proxy"; // same-origin on Vercel, so no CORS involved at all
+  var POLL_MS = 20000; // /rooms is a plain read, cheap to poll often now that it's same-origin
   var DECAY_SECONDS = 7 * 24 * 3600; // 7 day idle limit the server enforces
 
   // A real snapshot fetched while building this page, used only if a live
@@ -416,8 +454,6 @@
         if(m2){ meta.notesUsed = +m2[1]; meta.notesCap = +m2[2]; meta.notesTotal = m2[3]; }
         var m3 = /^#\s*engagement over (\d+) msgs scanned:\s*zero-response\s+(\d+)%,\s*nick diversity\s+([\d.]+),\s*notes\/msg\s+([\d.]+)/.exec(line);
         if(m3){ meta.msgsScanned=+m3[1]; meta.zeroResponse=+m3[2]; meta.nickDiversity=+m3[3]; meta.notesPerMsg=+m3[4]; }
-        var m4 = /^#\s*fetched_at\s+(\S+)/.exec(line);
-        if(m4){ meta.fetchedAtServer = m4[1]; }
         return;
       }
       var m = /^\/r\/(\S+)\s+seq\s+(\d+)\s+([\d.]+[KMGB]?)\s+([\d.]+[smhd])\s+ago(?:\s*·\s*(.*))?$/.exec(line);
@@ -452,29 +488,21 @@
     setStatus(true, "fetching…");
     hideCorsBanner();
 
-    // Tier 1: same-origin snapshot committed by .github/workflows/update-data.yml
-    // (refreshed ~every 10 min server-side, so it never hits browser CORS at all).
-    fetchText(LOCAL_URL + "?t=" + Date.now())
-      .then(function(text){ applyData(text, "synced"); })
-      .catch(function(){
-        // Tier 2: try a direct cross-origin fetch, in case the viewer's browser
-        // and technocore.chat's CORS policy happen to allow it.
-        return fetchText(LIVE_URL)
-          .then(function(text){ applyData(text, "live"); })
-          .catch(function(err){
-            console.warn("both live and synced fetch failed, using embedded fallback:", err);
-            showCorsBanner();
-            if(state.rooms.length === 0){
-              applyData(FALLBACK_TEXT, "fallback");
-            } else {
-              setStatus(false, "refresh failed — showing last successful data");
-            }
-          });
+    fetchText(PROXY_BASE + "/rooms")
+      .then(function(text){ applyData(text, "live"); })
+      .catch(function(err){
+        console.warn("live fetch via proxy failed, using embedded fallback:", err);
+        showCorsBanner();
+        if(state.rooms.length === 0){
+          applyData(FALLBACK_TEXT, "fallback");
+        } else {
+          setStatus(false, "refresh failed — showing last successful data");
+        }
       });
   }
 
   function fetchText(url){
-    return fetch(url, { mode: "cors", cache: "no-store" }).then(function(res){
+    return fetch(url, { cache: "no-store" }).then(function(res){
       if(!res.ok) throw new Error("HTTP "+res.status);
       return res.text();
     });
@@ -483,10 +511,9 @@
   function showCorsBanner(){
     var b = document.getElementById("cors-banner");
     var t = document.getElementById("cors-banner-text");
-    t.innerHTML = "Couldn't load <code class='inline'>data/rooms.txt</code> (the CI-refreshed snapshot) or reach " +
-      "<code class='inline'>technocore.chat</code> directly (blocked by CORS, as expected for a cross-origin browser fetch). " +
-      "Showing a fixed snapshot captured while building this tool instead. Once <code class='inline'>.github/workflows/update-data.yml</code> " +
-      "has run at least once on this repo, <code class='inline'>data/rooms.txt</code> will exist and this banner should disappear.";
+    t.innerHTML = "Couldn't reach <code class='inline'>" + PROXY_BASE + "/rooms</code>. " +
+      "If you're viewing this straight from GitHub or a local file, the proxy only exists once this is deployed on Vercel " +
+      "(see <code class='inline'>api/proxy/[...path].js</code> in the repo). Showing a fixed snapshot captured while building this tool instead.";
     b.classList.add("show");
   }
   function hideCorsBanner(){
@@ -498,15 +525,9 @@
     state.rooms = parsed.rooms;
     state.meta = parsed.meta;
     state.fetchedAt = new Date();
-    var label;
-    if(source === "live"){
-      label = "live · updated " + state.fetchedAt.toLocaleTimeString();
-    } else if(source === "synced"){
-      var srv = parsed.meta.fetchedAtServer;
-      label = "synced" + (srv ? " · snapshot from " + srv : "") + " · refreshes ~every 10 min";
-    } else {
-      label = "showing cached snapshot";
-    }
+    var label = source === "live"
+      ? "live · updated " + state.fetchedAt.toLocaleTimeString()
+      : "showing cached snapshot";
     setStatus(source !== "fallback", label);
     render();
   }
@@ -729,7 +750,109 @@
     renderRing();
   }
 
-  // ---------- events ----------
+  // ---------- live room events feed (long-poll via the same-origin proxy) ----------
+  var eventsState = { items: [], lastSeq: null, everConnected: false };
+
+  function setEventsStatus(connected, text){
+    document.getElementById("events-dot").classList.toggle("off", !connected);
+    document.getElementById("events-status").textContent = text;
+  }
+
+  function startEventsFeed(){
+    setEventsStatus(true, "connecting to live feed…");
+    pollEventsOnce();
+  }
+
+  function pollEventsOnce(){
+    var params = "?format=json&limit=20" +
+      (eventsState.lastSeq != null ? "&since=" + eventsState.lastSeq + "&wait=9" : "");
+    var url = PROXY_BASE + "/r/events" + params;
+
+    fetch(url, { cache: "no-store" })
+      .then(function(res){
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(function(text){
+        handleEventsResponse(text);
+        eventsState.everConnected = true;
+        setEventsStatus(true, "live · " + eventsState.items.length + " recent room" + (eventsState.items.length===1?"":"s"));
+        pollEventsOnce(); // immediately hold open the next long-poll
+      })
+      .catch(function(err){
+        console.warn("events feed error:", err);
+        setEventsStatus(false, eventsState.everConnected ? "reconnecting…" : "live feed unavailable (needs the Vercel proxy — see README)");
+        setTimeout(pollEventsOnce, 5000); // back off before retrying
+      });
+  }
+
+  function handleEventsResponse(text){
+    var trimmed = (text || "").trim();
+    if(!trimmed) return; // long-poll simply timed out with nothing new — normal
+
+    var parsedAny = false;
+
+    // Prefer structured JSON if the server sent it.
+    try{
+      var data = JSON.parse(trimmed);
+      var arr = Array.isArray(data) ? data : (data.messages || data.entries || data.items || []);
+      if(Array.isArray(arr) && arr.length){
+        arr.forEach(function(m){
+          var seq = m.seq != null ? m.seq : (m.id != null ? m.id : null);
+          var raw = m.text != null ? m.text : (m.body != null ? m.body : JSON.stringify(m));
+          addEventItem(seq, String(raw));
+        });
+        parsedAny = true;
+      }
+    } catch(e){ /* not JSON, fall through to line parsing */ }
+
+    if(!parsedAny){
+      trimmed.split("\n").forEach(function(line){
+        line = line.trim();
+        if(!line || line[0] === "#") return;
+        var m = /^\[?(\d+)\]?[:\s]+(.*)$/.exec(line);
+        addEventItem(m ? +m[1] : null, m ? m[2] : line);
+      });
+    }
+
+    renderEvents();
+  }
+
+  function addEventItem(seq, raw){
+    if(seq != null) eventsState.lastSeq = seq;
+    eventsState.items.unshift({ seq: seq, raw: raw, at: Date.now() });
+    eventsState.items = eventsState.items.slice(0, 25);
+  }
+
+  function renderEvents(){
+    var el = document.getElementById("events-list");
+    if(eventsState.items.length === 0){
+      el.innerHTML = '<div class="events-empty">Watching /r/events for newly created rooms — nothing yet in this session.</div>';
+      return;
+    }
+    el.innerHTML = eventsState.items.map(function(it){
+      var nameMatch = /created\s+(\S+)/i.exec(it.raw);
+      var text = nameMatch
+        ? 'new room: <b>/r/' + nameMatch[1] + '</b>'
+        : escapeHtml(it.raw);
+      return '<div class="event-row"><span class="event-time">' + relTime(it.at) + '</span>' +
+        '<span class="event-text">' + text + '</span></div>';
+    }).join("");
+  }
+
+  function relTime(ts){
+    var s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if(s < 60) return s + "s ago";
+    return Math.round(s/60) + "m ago";
+  }
+  function escapeHtml(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  // Re-render just the relative timestamps every few seconds so "3s ago" keeps ticking.
+  setInterval(function(){ if(eventsState.items.length) renderEvents(); }, 4000);
+
+  // ---------- UI event listeners ----------
   document.getElementById("refresh-btn").addEventListener("click", loadLive);
   document.getElementById("filter").addEventListener("input", function(e){
     state.filter = e.target.value;
@@ -746,6 +869,7 @@
   // ---------- boot ----------
   loadLive();
   setInterval(loadLive, POLL_MS);
+  startEventsFeed();
 })();
 </script>
 </body>
