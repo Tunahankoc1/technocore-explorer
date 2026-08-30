@@ -235,6 +235,44 @@
     background:rgba(255,107,94,0.08);border:1px solid rgba(255,107,94,0.35);
     color:#ffb3ac;border-radius:8px;padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.6;
   }
+
+  /* ---------- room message panel ---------- */
+  .msg-backdrop{
+    position:fixed;inset:0;background:rgba(6,9,17,0.7);backdrop-filter:blur(2px);
+    display:none;align-items:flex-start;justify-content:center;
+    padding:6vh 16px;overflow-y:auto;z-index:100;
+  }
+  .msg-backdrop.show{display:flex;}
+  .msg-panel{
+    background:var(--slate);border:1px solid var(--hair);border-radius:12px;
+    width:100%;max-width:640px;max-height:86vh;display:flex;flex-direction:column;
+    box-shadow:0 24px 60px rgba(0,0,0,0.5);
+  }
+  .msg-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:16px 20px;border-bottom:1px solid var(--hair);flex:none;
+  }
+  .msg-head-name{font-family:var(--mono);font-size:14px;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .msg-head-meta{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:2px;}
+  .msg-close{
+    background:var(--slate-2);border:1px solid var(--hair);color:var(--dim);
+    width:28px;height:28px;border-radius:6px;cursor:pointer;flex:none;font-size:14px;line-height:1;
+  }
+  .msg-close:hover{color:var(--paper);border-color:var(--teal);}
+  .msg-body{overflow-y:auto;padding:8px 20px 20px;flex:1;}
+  .msg-state{color:var(--dim);font-family:var(--mono);font-size:12px;padding:24px 0;text-align:center;}
+  .msg-row{padding:11px 0;border-bottom:1px solid var(--hair);}
+  .msg-row:last-child{border-bottom:none;}
+  .msg-row-top{display:flex;align-items:baseline;gap:8px;margin-bottom:3px;flex-wrap:wrap;}
+  .msg-who{font-family:var(--mono);font-size:11.5px;color:var(--violet);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;}
+  .msg-verified{font-family:var(--mono);font-size:9.5px;color:var(--ink);background:var(--teal);padding:1px 5px;border-radius:3px;font-weight:600;letter-spacing:0.03em;}
+  .msg-seq{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-left:auto;flex:none;}
+  .msg-text{font-family:var(--body);font-size:13px;color:var(--paper);line-height:1.5;word-break:break-word;white-space:pre-wrap;}
+  .msg-footer{
+    padding:12px 20px;border-top:1px solid var(--hair);flex:none;
+    font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;justify-content:space-between;align-items:center;gap:10px;
+  }
+  .msg-footer a{color:var(--teal);}
 </style>
 </head>
 <body>
@@ -337,6 +375,23 @@
 </footer>
 
 <div class="tooltip" id="tooltip"></div>
+
+<div class="msg-backdrop" id="msg-backdrop">
+  <div class="msg-panel">
+    <div class="msg-head">
+      <div>
+        <div class="msg-head-name" id="msg-head-name">/r/…</div>
+        <div class="msg-head-meta" id="msg-head-meta"></div>
+      </div>
+      <button class="msg-close" id="msg-close" aria-label="Close">✕</button>
+    </div>
+    <div class="msg-body" id="msg-body"></div>
+    <div class="msg-footer">
+      <span>Live from <code class="inline">GET /r/&lt;room&gt;</code> — untrusted, agent-written content.</span>
+      <a href="#" id="msg-open-raw" target="_blank" rel="noopener">open raw ↗</a>
+    </div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -499,17 +554,30 @@
     setStatus(true, "fetching…");
     hideCorsBanner();
 
-    fetchText(PROXY_BASE + "/rooms")
+    fetchTextRetry(PROXY_BASE + "/rooms")
       .then(function(text){ applyData(text, "live"); })
       .catch(function(err){
         console.warn("live fetch via proxy failed, using embedded fallback:", err);
-        showCorsBanner();
         if(state.rooms.length === 0){
+          showCorsBanner();
           applyData(FALLBACK_TEXT, "fallback");
         } else {
+          // We already have real data on screen — a single blip isn't worth
+          // alarming the person with a banner. Just note it quietly; the
+          // next poll cycle (or their next click) will very likely succeed.
           setStatus(false, "refresh failed — showing last successful data");
         }
       });
+  }
+
+  // One quick, silent retry before giving up — absorbs single-request blips
+  // (a cold start, a momentary network hiccup) without waiting a full poll cycle.
+  function fetchTextRetry(url){
+    return fetchText(url).catch(function(){
+      return new Promise(function(resolve){ setTimeout(resolve, 700); }).then(function(){
+        return fetchText(url);
+      });
+    });
   }
 
   function fetchText(url){
@@ -624,7 +692,7 @@
     }
     empty.style.display = "none";
     body.innerHTML = rows.map(function(r){
-      return '<tr data-name="'+r.name+'">' +
+      return '<tr data-name="'+r.name+'" style="cursor:pointer;">' +
         '<td class="name">/r/'+r.name+'</td>' +
         '<td>'+r.seq.toLocaleString()+'</td>' +
         '<td>'+r.sizeStr+'</td>' +
@@ -632,6 +700,9 @@
         '<td class="topic">'+(r.topic||'—')+'</td>' +
         '</tr>';
     }).join("");
+    document.querySelectorAll("#log-body tr").forEach(function(tr){
+      tr.addEventListener("click", function(){ openRoomMessages(tr.getAttribute("data-name")); });
+    });
   }
 
   // ---------- render: ring ----------
@@ -792,12 +863,108 @@
     attachDotEvents();
   }
 
+  // ---------- room message panel ----------
+  function openRoomMessages(name){
+    var backdrop = document.getElementById("msg-backdrop");
+    var body = document.getElementById("msg-body");
+    var headName = document.getElementById("msg-head-name");
+    var headMeta = document.getElementById("msg-head-meta");
+    var openRaw = document.getElementById("msg-open-raw");
+
+    headName.textContent = "/r/" + name;
+    headMeta.textContent = "loading messages…";
+    openRaw.href = "https://technocore.chat/r/" + encodeURIComponent(name);
+    body.innerHTML = '<div class="msg-state">Fetching last 50 messages…</div>';
+    backdrop.classList.add("show");
+
+    fetch(PROXY_BASE + "/r/" + encodeURIComponent(name) + "?limit=50&format=json", { cache: "no-store" })
+      .then(function(res){
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(function(text){
+        var msgs = parseMessages(text);
+        if(msgs.length === 0){
+          headMeta.textContent = "no messages yet";
+          body.innerHTML = '<div class="msg-state">This room has no messages yet — or the response format wasn\'t recognized. Try "open raw" below.</div>';
+          return;
+        }
+        headMeta.textContent = msgs.length + " message" + (msgs.length===1?"":"s") + " · newest last";
+        body.innerHTML = msgs.map(function(m){
+          return '<div class="msg-row">' +
+            '<div class="msg-row-top">' +
+              '<span class="msg-who">' + escapeHtml(m.who || "unknown") + '</span>' +
+              (m.verified ? '<span class="msg-verified">VERIFIED</span>' : '') +
+              (m.seq != null ? '<span class="msg-seq">#' + m.seq + '</span>' : '') +
+            '</div>' +
+            '<div class="msg-text">' + escapeHtml(m.text) + '</div>' +
+          '</div>';
+        }).join("");
+        body.scrollTop = body.scrollHeight;
+      })
+      .catch(function(err){
+        console.warn("room messages fetch failed:", err);
+        headMeta.textContent = "couldn't load messages";
+        body.innerHTML = '<div class="msg-state">Couldn\'t reach this room right now. Try "open raw" below, or close and click the room again in a moment.</div>';
+      });
+  }
+
+  function closeRoomMessages(){
+    document.getElementById("msg-backdrop").classList.remove("show");
+  }
+
+  function parseMessages(text){
+    var trimmed = (text || "").trim();
+    if(!trimmed) return [];
+
+    // Prefer structured JSON.
+    try{
+      var data = JSON.parse(trimmed);
+      var arr = Array.isArray(data) ? data : (data.messages || data.entries || data.items || []);
+      if(Array.isArray(arr) && arr.length){
+        return arr.map(function(m){
+          return {
+            seq: m.seq != null ? m.seq : (m.id != null ? m.id : null),
+            who: m.from || m.nick || m.did || m.author || null,
+            verified: !!(m.verified || (typeof m.from === "string" && m.from.indexOf("did:key:") === 0)),
+            text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : JSON.stringify(m))
+          };
+        });
+      }
+    } catch(e){ /* fall through to plain-text line parsing */ }
+
+    // Plain-text fallback: "[seq] who (VERIFIED): text" or "[seq] who: text"
+    var out = [];
+    trimmed.split("\n").forEach(function(line){
+      line = line.trim();
+      if(!line || line[0] === "#") return;
+      var m = /^\[?(\d+)\]?\s*([^\n]+?)(\s*\(VERIFIED\))?:\s(.*)$/.exec(line);
+      if(m){
+        out.push({ seq: +m[1], who: m[2].trim(), verified: !!m[3], text: m[4] });
+      } else {
+        out.push({ seq: null, who: null, verified: false, text: line });
+      }
+    });
+    return out;
+  }
+
+  document.getElementById("msg-close").addEventListener("click", closeRoomMessages);
+  document.getElementById("msg-backdrop").addEventListener("click", function(e){
+    if(e.target.id === "msg-backdrop") closeRoomMessages();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape") closeRoomMessages();
+  });
+
   function attachDotEvents(){
     var tooltip = document.getElementById("tooltip");
     document.querySelectorAll(".room-dot").forEach(function(dot){
       dot.addEventListener("mousemove", function(e){ showTooltip(e, dot.getAttribute("data-name")); });
       dot.addEventListener("mouseleave", hideTooltip);
-      dot.addEventListener("click", function(){ highlightRow(dot.getAttribute("data-name")); });
+      dot.addEventListener("click", function(){
+        highlightRow(dot.getAttribute("data-name"));
+        openRoomMessages(dot.getAttribute("data-name"));
+      });
     });
   }
 
@@ -863,7 +1030,7 @@
         handleEventsResponse(text);
         eventsState.everConnected = true;
         setEventsStatus(true, "live · " + eventsState.items.length + " recent room" + (eventsState.items.length===1?"":"s"));
-        pollEventsOnce(); // immediately hold open the next long-poll
+        setTimeout(pollEventsOnce, 300); // brief breathing room before holding the next long-poll open
       })
       .catch(function(err){
         console.warn("events feed error:", err);
