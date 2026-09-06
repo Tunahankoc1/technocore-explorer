@@ -719,6 +719,61 @@
     return (hashHue(name) / 360) * Math.PI * 2;
   }
 
+  // Injects a short-lived expanding "burst" onto the ring the instant a new
+  // room is announced by the live events feed — independent of the ~20s full
+  // redraw cycle, so it feels immediate. Cleans up after itself.
+  function triggerRingPulse(name){
+    var svg = document.getElementById("ring-svg");
+    if(!svg) return;
+    var ang = stableAngle(name);
+    var x = CX + Math.cos(ang)*MINR;
+    var y = CY + Math.sin(ang)*MINR;
+    var ns = "http://www.w3.org/2000/svg";
+
+    var g = document.createElementNS(ns, "g");
+
+    var burst = document.createElementNS(ns, "circle");
+    burst.setAttribute("cx", x.toFixed(1));
+    burst.setAttribute("cy", y.toFixed(1));
+    burst.setAttribute("r", "3");
+    burst.setAttribute("fill", "none");
+    burst.setAttribute("stroke", "#4fd1c5");
+    burst.setAttribute("stroke-width", "2");
+    burst.setAttribute("opacity", "0.9");
+    var animR = document.createElementNS(ns, "animate");
+    animR.setAttribute("attributeName", "r");
+    animR.setAttribute("values", "3;48");
+    animR.setAttribute("dur", "1.1s");
+    animR.setAttribute("fill", "freeze");
+    burst.appendChild(animR);
+    var animO = document.createElementNS(ns, "animate");
+    animO.setAttribute("attributeName", "opacity");
+    animO.setAttribute("values", "0.9;0");
+    animO.setAttribute("dur", "1.1s");
+    animO.setAttribute("fill", "freeze");
+    burst.appendChild(animO);
+
+    var core = document.createElementNS(ns, "circle");
+    core.setAttribute("cx", x.toFixed(1));
+    core.setAttribute("cy", y.toFixed(1));
+    core.setAttribute("r", "4.5");
+    core.setAttribute("fill", "#4fd1c5");
+    core.setAttribute("filter", "url(#dotGlow)");
+    var animCoreO = document.createElementNS(ns, "animate");
+    animCoreO.setAttribute("attributeName", "opacity");
+    animCoreO.setAttribute("values", "1;1;0");
+    animCoreO.setAttribute("keyTimes", "0;0.5;1");
+    animCoreO.setAttribute("dur", "1.4s");
+    animCoreO.setAttribute("fill", "freeze");
+    core.appendChild(animCoreO);
+
+    g.appendChild(burst);
+    g.appendChild(core);
+    svg.appendChild(g);
+
+    setTimeout(function(){ if(g.parentNode) g.parentNode.removeChild(g); }, 1500);
+  }
+
   var clusterColorCache = {};
   var CLUSTER_PALETTE = ["#4fd1c5","#9c8fd9","#e8b339","#ff6b5e","#7ecbff","#c792ea","#f6a97a","#6bcf9a"];
   function colorFor(room){
@@ -1050,31 +1105,38 @@
       var data = JSON.parse(trimmed);
       var arr = Array.isArray(data) ? data : (data.messages || data.entries || data.items || []);
       if(Array.isArray(arr) && arr.length){
-        arr.forEach(function(m){
+        arr.forEach(function(m, i){
           var seq = m.seq != null ? m.seq : (m.id != null ? m.id : null);
           var raw = m.text != null ? m.text : (m.body != null ? m.body : JSON.stringify(m));
-          addEventItem(seq, String(raw));
+          addEventItem(seq, String(raw), i*90);
         });
         parsedAny = true;
       }
     } catch(e){ /* not JSON, fall through to line parsing */ }
 
     if(!parsedAny){
+      var lineIdx = 0;
       trimmed.split("\n").forEach(function(line){
         line = line.trim();
         if(!line || line[0] === "#") return;
         var m = /^\[?(\d+)\]?[:\s]+(.*)$/.exec(line);
-        addEventItem(m ? +m[1] : null, m ? m[2] : line);
+        addEventItem(m ? +m[1] : null, m ? m[2] : line, lineIdx*90);
+        lineIdx++;
       });
     }
 
     renderEvents();
   }
 
-  function addEventItem(seq, raw){
+  function addEventItem(seq, raw, pulseDelay){
     if(seq != null) eventsState.lastSeq = seq;
-    eventsState.items.unshift({ seq: seq, raw: raw, at: Date.now() });
+    var nameMatch = /created\s+(\S+)/i.exec(raw);
+    var roomName = nameMatch ? nameMatch[1] : null;
+    eventsState.items.unshift({ seq: seq, raw: raw, at: Date.now(), roomName: roomName });
     eventsState.items = eventsState.items.slice(0, 25);
+    if(roomName){
+      setTimeout(function(){ triggerRingPulse(roomName); }, pulseDelay || 0);
+    }
   }
 
   function renderEvents(){
@@ -1084,9 +1146,8 @@
       return;
     }
     el.innerHTML = eventsState.items.map(function(it){
-      var nameMatch = /created\s+(\S+)/i.exec(it.raw);
-      var text = nameMatch
-        ? 'new room: <b>/r/' + nameMatch[1] + '</b>'
+      var text = it.roomName
+        ? 'new room: <b>/r/' + it.roomName + '</b>'
         : escapeHtml(it.raw);
       return '<div class="event-row"><span class="event-time">' + relTime(it.at) + '</span>' +
         '<span class="event-text">' + text + '</span></div>';
