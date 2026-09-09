@@ -128,13 +128,13 @@
   .swatch{width:9px;height:9px;border-radius:50%;display:inline-block;}
 
   /* ---------- time machine scrubber ---------- */
-  .scrubber-wrap{max-width:560px;margin:16px auto 0;opacity:0;transition:opacity .3s ease;}
-  .scrubber-wrap.ready{opacity:1;}
+  .scrubber-wrap{max-width:560px;margin:16px auto 0;}
   .scrubber-row{display:flex;align-items:center;gap:10px;}
   .scrubber-row input[type=range]{
     flex:1;-webkit-appearance:none;appearance:none;height:2px;background:var(--hair);
     border-radius:2px;outline:none;cursor:pointer;
   }
+  .scrubber-row input[type=range]:disabled{cursor:default;opacity:0.5;}
   .scrubber-row input[type=range]::-webkit-slider-thumb{
     -webkit-appearance:none;width:13px;height:13px;border-radius:50%;
     background:var(--teal);border:2px solid var(--ink);cursor:pointer;
@@ -575,10 +575,33 @@
 
   var state = { rooms: [], meta: {}, sortKey: "idleSeconds", sortDir: 1, filter: "" };
 
-  // ---------- time machine (local, in-session, no backend) ----------
+  // ---------- time machine (persisted across reloads via localStorage) ----------
   var timeHistory = []; // { t: Date.now(), rooms, meta } — snapshots taken on every successful live fetch
   var TIME_HISTORY_MAX = 15; // ~5 minutes at the 20s poll interval
+  var TIME_HISTORY_STALE_MS = 10 * 60000; // ignore restored points older than 10 min — a fresh reload, not ancient data
+  var TIME_HISTORY_KEY = "technocore-explorer:time-history";
   var viewIndex = null; // null = tracking live; a number = pinned to that historical snapshot
+
+  function loadPersistedHistory(){
+    try{
+      var raw = localStorage.getItem(TIME_HISTORY_KEY);
+      if(!raw) return;
+      var parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed)) return;
+      var cutoff = Date.now() - TIME_HISTORY_STALE_MS;
+      timeHistory = parsed.filter(function(p){ return p && p.t >= cutoff && p.rooms; });
+    } catch(e){
+      console.warn("couldn't restore time history:", e);
+    }
+  }
+
+  function persistHistory(){
+    try{
+      localStorage.setItem(TIME_HISTORY_KEY, JSON.stringify(timeHistory));
+    } catch(e){
+      // private browsing / quota exceeded — history just won't survive a reload, no big deal
+    }
+  }
 
   function setStatus(live, text){
     document.getElementById("status-text").textContent = text;
@@ -637,6 +660,7 @@
     if(source === "live"){
       timeHistory.push({ t: Date.now(), rooms: parsed.rooms, meta: parsed.meta });
       if(timeHistory.length > TIME_HISTORY_MAX) timeHistory.shift();
+      persistHistory();
       updateScrubberRange();
     }
 
@@ -1082,16 +1106,17 @@
 
   // ---------- time machine controls ----------
   function updateScrubberRange(){
-    var wrap = document.getElementById("scrubber-wrap");
     var range = document.getElementById("scrubber-range");
     var n = timeHistory.length;
 
     if(n < 2){
-      wrap.classList.remove("ready");
+      range.disabled = true;
+      range.max = 0;
+      range.value = 0;
+      renderScrubberTicks();
       return;
     }
-    wrap.classList.add("ready");
-
+    range.disabled = false;
     range.max = n - 1;
     if(viewIndex === null){
       range.value = n - 1;
@@ -1102,7 +1127,10 @@
   function renderScrubberTicks(){
     var el = document.getElementById("scrubber-ticks");
     var n = timeHistory.length;
-    if(n < 2){ el.innerHTML = ""; return; }
+    if(n < 2){
+      el.innerHTML = '<span style="grid-column:1/-1;">collecting history…</span>';
+      return;
+    }
     var oldest = timeHistory[0].t;
     var newest = timeHistory[n-1].t;
     var midAgoMin = Math.round((newest - timeHistory[Math.floor(n/2)].t) / 60000);
@@ -1270,6 +1298,16 @@
     });
   });
 
+  // ---------- boot ----------
+  loadPersistedHistory();
+  if(timeHistory.length){
+    var lastPersisted = timeHistory[timeHistory.length - 1];
+    state.rooms = lastPersisted.rooms;
+    state.meta = lastPersisted.meta;
+    render();
+    setStatus(false, "showing last known data · " + Math.round((Date.now()-lastPersisted.t)/1000) + "s old — fetching live…");
+    updateScrubberRange();
+  }
   loadLive();
   setInterval(loadLive, POLL_MS);
   startEventsFeed();
