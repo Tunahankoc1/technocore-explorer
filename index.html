@@ -440,6 +440,8 @@
 
   var PROXY_BASE = "/api/proxy"; // same-origin on Vercel, so no CORS involved at all
   var POLL_MS = 20000; // /rooms is a plain read, cheap to poll often now that it's same-origin
+  var FAST_POLL_MS = 5000; // used only while timeHistory is thin, so the scrubber fills up quickly
+  var FAST_POLL_UNTIL_POINTS = 4;
   var DECAY_SECONDS = 7 * 24 * 3600; // 7 day idle limit the server enforces
 
   var FALLBACK_TEXT = [
@@ -664,6 +666,9 @@
       updateScrubberRange();
     }
 
+    // If the person is currently scrubbing through history, don't yank the
+    // display out from under them just because a new poll came in — the new
+    // point is recorded either way, ready for when they return to "now".
     if(viewIndex !== null){
       setStatus(source !== "fallback", source === "live" ? "live (paused — viewing history)" : "showing cached snapshot");
       return;
@@ -974,6 +979,8 @@
     var headMeta = document.getElementById("msg-head-meta");
     var openRaw = document.getElementById("msg-open-raw");
 
+    try{ history.replaceState(null, "", "?room=" + encodeURIComponent(name)); } catch(e){}
+
     headName.textContent = "/r/" + name;
     headMeta.textContent = "loading messages…";
     openRaw.href = "https://technocore.chat/r/" + encodeURIComponent(name);
@@ -1014,6 +1021,7 @@
 
   function closeRoomMessages(){
     document.getElementById("msg-backdrop").classList.remove("show");
+    try{ history.replaceState(null, "", window.location.pathname); } catch(e){}
   }
 
   function parseMessages(text){
@@ -1298,6 +1306,15 @@
     });
   });
 
+  // Polls fast (every 5s) while the scrubber's history is thin, then settles
+  // into the normal cadence once there's enough to scrub through — so a
+  // fresh visit doesn't have to sit and wait a full minute for the scrubber
+  // to become usable.
+  function scheduleNextPoll(){
+    var delay = timeHistory.length < FAST_POLL_UNTIL_POINTS ? FAST_POLL_MS : POLL_MS;
+    setTimeout(function(){ loadLive(); scheduleNextPoll(); }, delay);
+  }
+
   // ---------- boot ----------
   loadPersistedHistory();
   if(timeHistory.length){
@@ -1309,8 +1326,16 @@
     updateScrubberRange();
   }
   loadLive();
-  setInterval(loadLive, POLL_MS);
+  scheduleNextPoll();
   startEventsFeed();
+
+  // Deep link support: /?room=lobby opens that room's messages immediately.
+  (function(){
+    try{
+      var requested = new URLSearchParams(window.location.search).get("room");
+      if(requested) openRoomMessages(requested);
+    } catch(e){}
+  })();
 })();
 </script>
 </body>
