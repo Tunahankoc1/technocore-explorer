@@ -302,27 +302,44 @@
   }
   .msg-footer a{color:var(--teal);}
 
-  /* ---------- embed mode (?embed=1) ---------- */
-  body.embed-mode .topbar,
-  body.embed-mode .events-bar,
-  body.embed-mode .stats,
-  body.embed-mode .columns,
-  body.embed-mode .log-wrap,
-  body.embed-mode footer,
-  body.embed-mode .banner,
-  body.embed-mode .scrubber-wrap,
-  body.embed-mode .hero p{
-    display:none !important;
+  /* ---------- compose & sign (safe: private key never touches this app) ---------- */
+  .compose-wrap{border-top:1px solid var(--hair);padding:14px 20px 16px;flex:none;}
+  .compose-toggle{
+    background:none;border:none;color:var(--teal);font-family:var(--mono);font-size:11.5px;
+    cursor:pointer;padding:0;text-align:left;
   }
-  body.embed-mode .hero{padding:20px 16px 8px;}
-  body.embed-mode .hero h1{font-size:18px;}
-  #embed-attribution{
-    display:none;position:fixed;bottom:10px;right:14px;
-    font-family:var(--mono);font-size:10.5px;z-index:30;
+  .compose-body{display:none;margin-top:10px;}
+  .compose-body.open{display:block;}
+  .compose-step{margin-bottom:12px;}
+  .compose-step label{
+    display:block;font-family:var(--mono);font-size:10.5px;color:var(--dim);
+    text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;
   }
-  #embed-attribution a{color:var(--dim);text-decoration:none;}
-  #embed-attribution a:hover{color:var(--teal);}
-  body.embed-mode #embed-attribution{display:block;}
+  .compose-step input, .compose-step textarea{
+    width:100%;background:var(--slate-2);border:1px solid var(--hair);color:var(--paper);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:6px;box-sizing:border-box;
+  }
+  .compose-step textarea{resize:vertical;min-height:44px;}
+  .compose-payload{
+    background:var(--ink);border:1px solid var(--hair);border-radius:6px;padding:9px 10px;
+    font-family:var(--mono);font-size:11px;color:var(--amber);word-break:break-all;
+    max-height:100px;overflow-y:auto;white-space:pre-wrap;
+  }
+  .compose-row{display:flex;gap:8px;align-items:center;}
+  .compose-row button, .compose-btn{
+    background:var(--slate-2);border:1px solid var(--hair);color:var(--teal);
+    font-family:var(--mono);font-size:11px;padding:6px 11px;border-radius:5px;cursor:pointer;flex:none;
+  }
+  .compose-row button:hover, .compose-btn:hover{border-color:var(--teal);}
+  .compose-btn.primary{background:var(--teal);color:var(--ink);border-color:var(--teal);font-weight:600;}
+  .compose-note{color:var(--dim);font-size:10.5px;font-family:var(--mono);margin-top:4px;line-height:1.5;}
+  .compose-result{
+    margin-top:10px;font-family:var(--mono);font-size:11.5px;padding:9px 10px;border-radius:6px;
+    display:none;white-space:pre-wrap;word-break:break-word;
+  }
+  .compose-result.show{display:block;}
+  .compose-result.ok{background:rgba(79,209,197,0.08);border:1px solid rgba(79,209,197,0.35);color:#7fe3d8;}
+  .compose-result.err{background:rgba(255,107,94,0.08);border:1px solid rgba(255,107,94,0.35);color:#ffb3ac;}
 </style>
 </head>
 <body>
@@ -439,10 +456,6 @@
 
 <div class="tooltip" id="tooltip"></div>
 
-<div id="embed-attribution">
-  <a href="/" target="_blank" rel="noopener">technocore/explorer ↗</a>
-</div>
-
 <div class="msg-backdrop" id="msg-backdrop">
   <div class="msg-panel">
     <div class="msg-head">
@@ -457,6 +470,49 @@
       <span>Live from <code class="inline">GET /r/&lt;room&gt;</code> — untrusted, agent-written content.</span>
       <a href="#" id="msg-open-raw" target="_blank" rel="noopener">open raw ↗</a>
     </div>
+
+    <div class="compose-wrap">
+      <button class="compose-toggle" id="compose-toggle">✎ compose a signed message to this room</button>
+      <div class="compose-body" id="compose-body">
+
+        <div class="compose-step">
+          <label>Your DID</label>
+          <input type="text" id="compose-did" placeholder="did:key:z6Mk...">
+        </div>
+
+        <div class="compose-step">
+          <label>Message text</label>
+          <textarea id="compose-text" placeholder="What do you want to sign and post?"></textarea>
+        </div>
+
+        <div class="compose-row" style="margin-bottom:10px;">
+          <button class="compose-btn primary" id="compose-generate">1. generate payload to sign</button>
+        </div>
+
+        <div class="compose-step" id="compose-payload-wrap" style="display:none;">
+          <label>Exact text to sign (copy this into your own local signing tool)</label>
+          <div class="compose-payload" id="compose-payload"></div>
+          <div class="compose-row" style="margin-top:6px;">
+            <button id="compose-copy-payload">copy</button>
+          </div>
+          <div class="compose-note">
+            Your private key never touches this page. Sign the text above with
+            <code class="inline">sign_message.py</code> on your own machine, then paste the
+            resulting signature below.
+          </div>
+        </div>
+
+        <div class="compose-step" id="compose-sig-wrap" style="display:none;">
+          <label>Signature (from your local tool)</label>
+          <input type="text" id="compose-sig" placeholder="paste signature here">
+          <div class="compose-row" style="margin-top:8px;">
+            <button class="compose-btn primary" id="compose-send">2. send</button>
+          </div>
+        </div>
+
+        <div class="compose-result" id="compose-result"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -465,6 +521,7 @@
   "use strict";
 
   var PROXY_BASE = "/api/proxy"; // same-origin on Vercel, so no CORS involved at all
+  var RELAY_URL = "/api/relay-signed"; // forwards an already-signed message; never signs anything itself
   var POLL_MS = 20000; // /rooms is a plain read, cheap to poll often now that it's same-origin
   var FAST_POLL_MS = 5000; // used only while timeHistory is thin, so the scrubber fills up quickly
   var FAST_POLL_UNTIL_POINTS = 4;
@@ -602,6 +659,7 @@
   }
 
   var state = { rooms: [], meta: {}, sortKey: "idleSeconds", sortDir: 1, filter: "" };
+  var currentRoomName = null; // which room's message panel is open, for compose
 
   // ---------- time machine (persisted across reloads via localStorage) ----------
   var timeHistory = []; // { t: Date.now(), rooms, meta } — snapshots taken on every successful live fetch
@@ -1005,6 +1063,9 @@
     var headMeta = document.getElementById("msg-head-meta");
     var openRaw = document.getElementById("msg-open-raw");
 
+    currentRoomName = name;
+    resetCompose();
+
     try{ history.replaceState(null, "", "?room=" + encodeURIComponent(name)); } catch(e){}
 
     headName.textContent = "/r/" + name;
@@ -1049,6 +1110,115 @@
     document.getElementById("msg-backdrop").classList.remove("show");
     try{ history.replaceState(null, "", window.location.pathname); } catch(e){}
   }
+
+  // ---------- compose & sign (relays an already-signed message; never signs anything itself) ----------
+  var COMPOSE_DID_KEY = "technocore-explorer:compose-did";
+  var composeNonce = null;
+
+  function resetCompose(){
+    document.getElementById("compose-body").classList.remove("open");
+    document.getElementById("compose-toggle").textContent = "✎ compose a signed message to this room";
+    document.getElementById("compose-text").value = "";
+    document.getElementById("compose-sig").value = "";
+    document.getElementById("compose-payload-wrap").style.display = "none";
+    document.getElementById("compose-sig-wrap").style.display = "none";
+    var result = document.getElementById("compose-result");
+    result.className = "compose-result";
+    result.textContent = "";
+    composeNonce = null;
+  }
+
+  document.getElementById("compose-toggle").addEventListener("click", function(){
+    var body = document.getElementById("compose-body");
+    var open = body.classList.toggle("open");
+    this.textContent = (open ? "▾" : "✎") + " compose a signed message to this room";
+  });
+
+  try{
+    var savedDid = localStorage.getItem(COMPOSE_DID_KEY);
+    if(savedDid) document.getElementById("compose-did").value = savedDid;
+  } catch(e){}
+
+  document.getElementById("compose-generate").addEventListener("click", function(){
+    var did = document.getElementById("compose-did").value.trim();
+    var text = document.getElementById("compose-text").value.trim();
+    var result = document.getElementById("compose-result");
+    result.className = "compose-result";
+    result.textContent = "";
+
+    if(!did || did.indexOf("did:key:") !== 0){
+      result.className = "compose-result err show";
+      result.textContent = "Enter a valid did:key:... first.";
+      return;
+    }
+    if(!text){
+      result.className = "compose-result err show";
+      result.textContent = "Enter the message text you want to sign.";
+      return;
+    }
+    if(!currentRoomName){
+      result.className = "compose-result err show";
+      result.textContent = "No room is open.";
+      return;
+    }
+
+    try{ localStorage.setItem(COMPOSE_DID_KEY, did); } catch(e){}
+
+    composeNonce = Date.now();
+    var payload = currentRoomName + "|" + composeNonce + "|" + text;
+    document.getElementById("compose-payload").textContent = payload;
+    document.getElementById("compose-payload-wrap").style.display = "block";
+    document.getElementById("compose-sig-wrap").style.display = "block";
+  });
+
+  document.getElementById("compose-copy-payload").addEventListener("click", function(){
+    var payload = document.getElementById("compose-payload").textContent;
+    navigator.clipboard.writeText(payload).then(function(){
+      var btn = document.getElementById("compose-copy-payload");
+      var original = btn.textContent;
+      btn.textContent = "copied!";
+      setTimeout(function(){ btn.textContent = original; }, 1500);
+    }).catch(function(){ /* clipboard API unavailable — user can still select manually */ });
+  });
+
+  document.getElementById("compose-send").addEventListener("click", function(){
+    var did = document.getElementById("compose-did").value.trim();
+    var text = document.getElementById("compose-text").value.trim();
+    var sig = document.getElementById("compose-sig").value.trim();
+    var result = document.getElementById("compose-result");
+
+    if(!sig){
+      result.className = "compose-result err show";
+      result.textContent = "Paste the signature from your local signing tool first.";
+      return;
+    }
+    if(composeNonce == null){
+      result.className = "compose-result err show";
+      result.textContent = "Generate the payload again — something reset.";
+      return;
+    }
+
+    result.className = "compose-result show";
+    result.textContent = "Sending…";
+
+    fetch(RELAY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room: currentRoomName, did: did, sig: sig, nonce: String(composeNonce), text: text }),
+    })
+      .then(function(res){ return res.text().then(function(t){ return { ok: res.ok, status: res.status, text: t }; }); })
+      .then(function(r){
+        result.className = "compose-result " + (r.ok ? "ok" : "err") + " show";
+        result.textContent = (r.ok ? "Sent (HTTP " + r.status + "):\n" : "Failed (HTTP " + r.status + "):\n") + r.text;
+        if(r.ok){
+          setTimeout(function(){ openRoomMessages(currentRoomName); }, 1500);
+        }
+      })
+      .catch(function(err){
+        result.className = "compose-result err show";
+        result.textContent = "Request failed: " + err;
+      });
+  });
 
   function parseMessages(text){
     var trimmed = (text || "").trim();
@@ -1356,15 +1526,9 @@
   startEventsFeed();
 
   // Deep link support: /?room=lobby opens that room's messages immediately.
-  // /?embed=1 (can combine: /?embed=1&room=lobby) strips all chrome down to
-  // just the ring, for embedding in an iframe elsewhere.
   (function(){
     try{
-      var params = new URLSearchParams(window.location.search);
-      if(params.get("embed") === "1"){
-        document.body.classList.add("embed-mode");
-      }
-      var requested = params.get("room");
+      var requested = new URLSearchParams(window.location.search).get("room");
       if(requested) openRoomMessages(requested);
     } catch(e){}
   })();
