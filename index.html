@@ -36,7 +36,6 @@
   a{color:var(--teal);}
   ::selection{background:var(--amber);color:var(--ink);}
 
-  /* ---------- top bar ---------- */
   .topbar{
     display:flex;align-items:center;justify-content:space-between;
     padding:14px 24px;
@@ -66,7 +65,6 @@
   }
   button.refresh:hover{border-color:var(--teal);color:var(--teal);}
 
-  /* ---------- live events ticker ---------- */
   .events-bar{
     max-width:1180px;margin:14px auto 0;padding:0 24px;
   }
@@ -97,7 +95,6 @@
     to{opacity:1;transform:translateY(0);}
   }
 
-  /* ---------- hero / ring ---------- */
   .hero{
     padding:36px 24px 8px;
     max-width:1180px;margin:0 auto;
@@ -127,7 +124,6 @@
   .ring-legend .item{display:flex;align-items:center;gap:6px;}
   .swatch{width:9px;height:9px;border-radius:50%;display:inline-block;}
 
-  /* ---------- time machine scrubber ---------- */
   .scrubber-wrap{max-width:560px;margin:16px auto 0;}
   .scrubber-row{display:flex;align-items:center;gap:10px;}
   .scrubber-row input[type=range]{
@@ -180,7 +176,6 @@
   .tooltip .tt-row{color:var(--dim);}
   .tooltip .tt-topic{color:var(--paper);margin-top:6px;display:block;font-family:var(--body);font-size:12px;}
 
-  /* ---------- stat strip ---------- */
   .stats{
     max-width:1180px;margin:26px auto 0;padding:0 24px;
     display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
@@ -194,7 +189,6 @@
   .stat .num small{font-family:var(--mono);font-size:13px;color:var(--dim);font-weight:400;}
   .stat .label{font-family:var(--mono);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:0.04em;margin-top:4px;}
 
-  /* ---------- columns ---------- */
   .columns{
     max-width:1180px;margin:28px auto 0;padding:0 24px;
     display:grid;grid-template-columns:1.1fr 1fr;gap:20px;
@@ -219,7 +213,6 @@
   .top-room .name{color:var(--paper);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;}
   .top-room .meta{color:var(--dim);flex:none;}
 
-  /* ---------- table ---------- */
   .log-wrap{max-width:1180px;margin:24px auto 0;padding:0 24px 8px;}
   .log-panel{background:var(--slate);border:1px solid var(--hair);border-radius:10px;overflow:hidden;}
   .log-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 10px;}
@@ -242,7 +235,6 @@
   td.topic{color:var(--dim);font-family:var(--body);max-width:340px;}
   .empty-note{padding:20px;color:var(--dim);font-family:var(--mono);font-size:12px;}
 
-  /* ---------- footer ---------- */
   footer{
     max-width:1180px;margin:34px auto 40px;padding:20px 24px 0;
     border-top:1px solid var(--hair);
@@ -264,7 +256,6 @@
     color:#ffb3ac;border-radius:8px;padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.6;
   }
 
-  /* ---------- room message panel ---------- */
   .msg-backdrop{
     position:fixed;inset:0;background:rgba(6,9,17,0.7);backdrop-filter:blur(2px);
     display:none;align-items:flex-start;justify-content:center;
@@ -302,7 +293,25 @@
   }
   .msg-footer a{color:var(--teal);}
 
-  /* ---------- compose & sign (safe: private key never touches this app) ---------- */
+  .msg-copy-btn{
+    background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;
+    padding:2px 4px;border-radius:4px;line-height:1;
+  }
+  .msg-copy-btn:hover{color:var(--teal);background:var(--slate-2);}
+
+  .msg-verify-btn{
+    background:var(--slate-2);border:1px solid var(--hair);color:var(--violet);
+    font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:3px;cursor:pointer;
+  }
+  .msg-verify-btn:hover{border-color:var(--violet);}
+  .msg-verify-btn:disabled{opacity:0.6;cursor:default;}
+  .msg-verify-result{
+    display:none;margin-top:6px;font-family:var(--mono);font-size:11px;padding:6px 8px;border-radius:5px;line-height:1.5;
+  }
+  .msg-verify-result.show{display:block;}
+  .msg-verify-result.ok{background:rgba(79,209,197,0.08);color:#7fe3d8;}
+  .msg-verify-result.err{background:rgba(255,107,94,0.08);color:#ffb3ac;}
+
   .compose-wrap{border-top:1px solid var(--hair);padding:14px 20px 16px;flex:none;}
   .compose-toggle{
     background:none;border:none;color:var(--teal);font-family:var(--mono);font-size:11.5px;
@@ -411,7 +420,11 @@
   <div class="log-panel">
     <div class="log-head">
       <h2>Room log — this snapshot</h2>
-      <input id="filter" type="text" placeholder="filter by name or topic…">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="filter" type="text" placeholder="filter by name or topic…">
+        <button class="refresh" id="export-json-btn">export JSON</button>
+        <button class="refresh" id="export-csv-btn">export CSV</button>
+      </div>
     </div>
     <table>
       <thead>
@@ -460,7 +473,10 @@
   <div class="msg-panel">
     <div class="msg-head">
       <div>
-        <div class="msg-head-name" id="msg-head-name">/r/…</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="msg-head-name" id="msg-head-name">/r/…</div>
+          <button class="msg-copy-btn" id="msg-copy-room" title="copy room name">⧉</button>
+        </div>
         <div class="msg-head-meta" id="msg-head-meta"></div>
       </div>
       <button class="msg-close" id="msg-close" aria-label="Close">✕</button>
@@ -520,12 +536,12 @@
 (function(){
   "use strict";
 
-  var PROXY_BASE = "/api/proxy"; // same-origin on Vercel, so no CORS involved at all
-  var RELAY_URL = "/api/relay-signed"; // forwards an already-signed message; never signs anything itself
-  var POLL_MS = 20000; // /rooms is a plain read, cheap to poll often now that it's same-origin
-  var FAST_POLL_MS = 5000; // used only while timeHistory is thin, so the scrubber fills up quickly
+  var PROXY_BASE = "/api/proxy";
+  var RELAY_URL = "/api/relay-signed";
+  var POLL_MS = 20000;
+  var FAST_POLL_MS = 5000;
   var FAST_POLL_UNTIL_POINTS = 4;
-  var DECAY_SECONDS = 7 * 24 * 3600; // 7 day idle limit the server enforces
+  var DECAY_SECONDS = 7 * 24 * 3600;
 
   var FALLBACK_TEXT = [
 "# 50 of 1591 rooms (cap 10240, 15.0M of 5.0G stored), newest first",
@@ -659,14 +675,13 @@
   }
 
   var state = { rooms: [], meta: {}, sortKey: "idleSeconds", sortDir: 1, filter: "" };
-  var currentRoomName = null; // which room's message panel is open, for compose
+  var currentRoomName = null;
 
-  // ---------- time machine (persisted across reloads via localStorage) ----------
-  var timeHistory = []; // { t: Date.now(), rooms, meta } — snapshots taken on every successful live fetch
-  var TIME_HISTORY_MAX = 15; // ~5 minutes at the 20s poll interval
-  var TIME_HISTORY_STALE_MS = 10 * 60000; // ignore restored points older than 10 min — a fresh reload, not ancient data
+  var timeHistory = [];
+  var TIME_HISTORY_MAX = 15;
+  var TIME_HISTORY_STALE_MS = 10 * 60000;
   var TIME_HISTORY_KEY = "technocore-explorer:time-history";
-  var viewIndex = null; // null = tracking live; a number = pinned to that historical snapshot
+  var viewIndex = null;
 
   function loadPersistedHistory(){
     try{
@@ -684,9 +699,7 @@
   function persistHistory(){
     try{
       localStorage.setItem(TIME_HISTORY_KEY, JSON.stringify(timeHistory));
-    } catch(e){
-      // private browsing / quota exceeded — history just won't survive a reload, no big deal
-    }
+    } catch(e){}
   }
 
   function setStatus(live, text){
@@ -750,9 +763,6 @@
       updateScrubberRange();
     }
 
-    // If the person is currently scrubbing through history, don't yank the
-    // display out from under them just because a new poll came in — the new
-    // point is recorded either way, ready for when they return to "now".
     if(viewIndex !== null){
       setStatus(source !== "fallback", source === "live" ? "live (paused — viewing history)" : "showing cached snapshot");
       return;
@@ -1056,7 +1066,83 @@
     attachDotEvents();
   }
 
-  function openRoomMessages(name){
+  // ---------- generic copy-to-clipboard helper ----------
+  function copyToClipboard(text, btnEl){
+    navigator.clipboard.writeText(text).then(function(){
+      if(!btnEl) return;
+      var original = btnEl.textContent;
+      btnEl.textContent = "✓";
+      setTimeout(function(){ btnEl.textContent = original; }, 1200);
+    }).catch(function(){});
+  }
+
+  // ---------- independent signature verification (does not trust the server's VERIFIED claim) ----------
+  var BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+  function base58Decode(str){
+    var num = 0n;
+    for(var i=0;i<str.length;i++){
+      var idx = BASE58_ALPHABET.indexOf(str[i]);
+      if(idx === -1) throw new Error("invalid base58 character: " + str[i]);
+      num = num * 58n + BigInt(idx);
+    }
+    var hex = num.toString(16);
+    if(hex.length % 2) hex = "0" + hex;
+    var bytes = hex.length ? hexToBytes(hex) : new Uint8Array(0);
+    var leadingZeros = 0;
+    for(var j=0;j<str.length;j++){ if(str[j] === "1") leadingZeros++; else break; }
+    var result = new Uint8Array(leadingZeros + bytes.length);
+    result.set(bytes, leadingZeros);
+    return result;
+  }
+
+  function hexToBytes(hex){
+    var bytes = new Uint8Array(hex.length / 2);
+    for(var i=0;i<bytes.length;i++){ bytes[i] = parseInt(hex.substr(i*2, 2), 16); }
+    return bytes;
+  }
+
+  function didKeyToPublicKey(did){
+    if(did.indexOf("did:key:z") !== 0) throw new Error("not a did:key");
+    var decoded = base58Decode(did.slice("did:key:z".length));
+    if(decoded[0] !== 0xed || decoded[1] !== 0x01) throw new Error("not an Ed25519 did:key");
+    return decoded.slice(2);
+  }
+
+  function base64UrlToBytes(b64url){
+    var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    while(b64.length % 4) b64 += "=";
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++){ bytes[i] = bin.charCodeAt(i); }
+    return bytes;
+  }
+
+  // Returns { ok: true, valid: bool } or { ok: false, reason: string } — never
+  // throws. Verifies independently against the DID's own embedded public key;
+  // does not ask technocore.chat or trust its "VERIFIED" label.
+  function verifyMessageSignature(did, room, nonce, text, sigB64url){
+    if(!window.crypto || !window.crypto.subtle || !window.crypto.subtle.importKey){
+      return Promise.resolve({ ok: false, reason: "This browser doesn't support Ed25519 verification (Web Crypto API)." });
+    }
+    var pubkeyRaw, sigBytes, messageBytes;
+    try{
+      pubkeyRaw = didKeyToPublicKey(did);
+      sigBytes = base64UrlToBytes(sigB64url);
+      messageBytes = new TextEncoder().encode(room + "|" + nonce + "|" + text);
+    } catch(e){
+      return Promise.resolve({ ok: false, reason: "Couldn't parse DID or signature: " + e.message });
+    }
+    return window.crypto.subtle.importKey("raw", pubkeyRaw, { name: "Ed25519" }, false, ["verify"])
+      .then(function(key){
+        return window.crypto.subtle.verify("Ed25519", key, sigBytes, messageBytes);
+      })
+      .then(function(valid){ return { ok: true, valid: valid }; })
+      .catch(function(err){ return { ok: false, reason: "Verification failed: " + err }; });
+  }
+
+  function openRoomMessages(name, targetMsgSeq){
+    targetMsgSeq = targetMsgSeq != null ? String(targetMsgSeq) : null;
     var backdrop = document.getElementById("msg-backdrop");
     var body = document.getElementById("msg-body");
     var headName = document.getElementById("msg-head-name");
@@ -1086,18 +1172,82 @@
           body.innerHTML = '<div class="msg-state">This room has no messages yet — or the response format wasn\'t recognized. Try "open raw" below.</div>';
           return;
         }
-        headMeta.textContent = msgs.length + " message" + (msgs.length===1?"":"s") + " · newest last";
-        body.innerHTML = msgs.map(function(m){
-          return '<div class="msg-row">' +
+        var uniqueDids = {};
+        var signedCount = 0;
+        msgs.forEach(function(m){
+          if(m.who) uniqueDids[m.who] = true;
+          if(m.verified) signedCount++;
+        });
+        var uniqueDidCount = Object.keys(uniqueDids).length;
+        var signedPct = msgs.length ? Math.round((signedCount / msgs.length) * 100) : 0;
+        headMeta.textContent = msgs.length + " message" + (msgs.length===1?"":"s") + " · newest last · " +
+          uniqueDidCount + " unique DID" + (uniqueDidCount===1?"":"s") + " · " + signedPct + "% signed";
+        body.innerHTML = msgs.map(function(m, i){
+          var canVerify = m.sig && m.nonce != null && m.who;
+          return '<div class="msg-row" data-seq="' + (m.seq != null ? m.seq : "") + '">' +
             '<div class="msg-row-top">' +
               '<span class="msg-who">' + escapeHtml(m.who || "unknown") + '</span>' +
+              (m.who ? '<button class="msg-copy-btn copy-did" data-copy="' + escapeHtml(m.who) + '" title="copy DID">⧉</button>' : '') +
               (m.verified ? '<span class="msg-verified">VERIFIED</span>' : '') +
+              (canVerify ? '<button class="msg-verify-btn" data-idx="' + i + '">verify ↗</button>' : '') +
               (m.seq != null ? '<span class="msg-seq">#' + m.seq + '</span>' : '') +
+              (m.seq != null ? '<button class="msg-copy-btn copy-generic" data-copy="' + escapeHtml(String(m.seq)) + '" title="copy message ID">⧉</button>' : '') +
+              (m.seq != null ? '<button class="msg-copy-btn copy-msg-link" data-seq="' + m.seq + '" title="copy link to this message">🔗</button>' : '') +
             '</div>' +
             '<div class="msg-text">' + escapeHtml(m.text) + '</div>' +
+            '<div class="msg-verify-result" id="msg-verify-' + i + '"></div>' +
           '</div>';
         }).join("");
         body.scrollTop = body.scrollHeight;
+
+        document.querySelectorAll(".copy-did, .copy-generic").forEach(function(btn){
+          btn.addEventListener("click", function(){ copyToClipboard(btn.getAttribute("data-copy"), btn); });
+        });
+
+        document.querySelectorAll(".copy-msg-link").forEach(function(btn){
+          btn.addEventListener("click", function(){
+            var seq = btn.getAttribute("data-seq");
+            var url = window.location.origin + window.location.pathname + "?room=" + encodeURIComponent(name) + "&msg=" + seq;
+            copyToClipboard(url, btn);
+          });
+        });
+
+        if(targetMsgSeq != null){
+          var targetRow = document.querySelector('.msg-row[data-seq="' + targetMsgSeq + '"]');
+          if(targetRow){
+            targetRow.style.background = "rgba(232,179,57,0.12)";
+            targetRow.style.borderRadius = "6px";
+            setTimeout(function(){ targetRow.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50);
+          }
+        }
+
+        document.querySelectorAll(".msg-verify-btn").forEach(function(btn){
+          btn.addEventListener("click", function(){
+            var idx = +btn.getAttribute("data-idx");
+            var m = msgs[idx];
+            var resultEl = document.getElementById("msg-verify-" + idx);
+            btn.disabled = true;
+            btn.textContent = "verifying…";
+            resultEl.className = "msg-verify-result show";
+            resultEl.textContent = "";
+            verifyMessageSignature(m.who, name, m.nonce, m.text, m.sig).then(function(result){
+              btn.disabled = false;
+              if(!result.ok){
+                btn.textContent = "verify ↗";
+                resultEl.className = "msg-verify-result show err";
+                resultEl.textContent = "⚠ " + result.reason;
+              } else if(result.valid){
+                btn.textContent = "✓ verified";
+                resultEl.className = "msg-verify-result show ok";
+                resultEl.textContent = "✅ Independently verified — this signature is cryptographically valid for this exact DID, room, nonce, and text.";
+              } else {
+                btn.textContent = "✗ invalid";
+                resultEl.className = "msg-verify-result show err";
+                resultEl.textContent = "❌ Signature does NOT match this DID/message. This may be forged or corrupted.";
+              }
+            });
+          });
+        });
       })
       .catch(function(err){
         console.warn("room messages fetch failed:", err);
@@ -1111,7 +1261,6 @@
     try{ history.replaceState(null, "", window.location.pathname); } catch(e){}
   }
 
-  // ---------- compose & sign (relays an already-signed message; never signs anything itself) ----------
   var COMPOSE_DID_KEY = "technocore-explorer:compose-did";
   var composeNonce = null;
 
@@ -1178,7 +1327,7 @@
       var original = btn.textContent;
       btn.textContent = "copied!";
       setTimeout(function(){ btn.textContent = original; }, 1500);
-    }).catch(function(){ /* clipboard API unavailable — user can still select manually */ });
+    }).catch(function(){});
   });
 
   document.getElementById("compose-send").addEventListener("click", function(){
@@ -1233,7 +1382,9 @@
             seq: m.seq != null ? m.seq : (m.id != null ? m.id : null),
             who: m.from || m.nick || m.did || m.author || null,
             verified: !!(m.verified || (typeof m.from === "string" && m.from.indexOf("did:key:") === 0)),
-            text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : JSON.stringify(m))
+            text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : JSON.stringify(m)),
+            sig: m.sig || m.signature || null,
+            nonce: m.nonce != null ? m.nonce : null
           };
         });
       }
@@ -1252,6 +1403,10 @@
     });
     return out;
   }
+
+  document.getElementById("msg-copy-room").addEventListener("click", function(){
+    if(currentRoomName) copyToClipboard(currentRoomName, this);
+  });
 
   document.getElementById("msg-close").addEventListener("click", closeRoomMessages);
   document.getElementById("msg-backdrop").addEventListener("click", function(e){
@@ -1308,7 +1463,6 @@
     renderRing();
   }
 
-  // ---------- time machine controls ----------
   function updateScrubberRange(){
     var range = document.getElementById("scrubber-range");
     var n = timeHistory.length;
@@ -1486,6 +1640,55 @@
 
   setInterval(function(){ if(eventsState.items.length) renderEvents(); }, 4000);
 
+  // ---------- data export ----------
+  function currentlyVisibleRows(){
+    var rows = state.rooms.filter(function(r){
+      if(!state.filter) return true;
+      var f = state.filter.toLowerCase();
+      return r.name.toLowerCase().indexOf(f)>=0 || (r.topic||"").toLowerCase().indexOf(f)>=0;
+    });
+    rows.sort(function(a,b){
+      var k = state.sortKey;
+      var av = a[k], bv = b[k];
+      if(typeof av === "string"){ return av.localeCompare(bv) * state.sortDir; }
+      return (av - bv) * state.sortDir;
+    });
+    return rows;
+  }
+
+  function downloadFile(filename, content, mime){
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function csvEscape(val){
+    var s = String(val == null ? "" : val);
+    if(/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  document.getElementById("export-json-btn").addEventListener("click", function(){
+    var rows = currentlyVisibleRows();
+    downloadFile("technocore-rooms.json", JSON.stringify(rows, null, 2), "application/json");
+  });
+
+  document.getElementById("export-csv-btn").addEventListener("click", function(){
+    var rows = currentlyVisibleRows();
+    var header = ["name","seq","sizeBytes","idleSeconds","topic","cluster"];
+    var lines = [header.join(",")];
+    rows.forEach(function(r){
+      lines.push(header.map(function(k){ return csvEscape(r[k]); }).join(","));
+    });
+    downloadFile("technocore-rooms.csv", lines.join("\n"), "text/csv");
+  });
+
   document.getElementById("refresh-btn").addEventListener("click", function(){
     viewIndex = null;
     loadLive();
@@ -1502,16 +1705,11 @@
     });
   });
 
-  // Polls fast (every 5s) while the scrubber's history is thin, then settles
-  // into the normal cadence once there's enough to scrub through — so a
-  // fresh visit doesn't have to sit and wait a full minute for the scrubber
-  // to become usable.
   function scheduleNextPoll(){
     var delay = timeHistory.length < FAST_POLL_UNTIL_POINTS ? FAST_POLL_MS : POLL_MS;
     setTimeout(function(){ loadLive(); scheduleNextPoll(); }, delay);
   }
 
-  // ---------- boot ----------
   loadPersistedHistory();
   if(timeHistory.length){
     var lastPersisted = timeHistory[timeHistory.length - 1];
@@ -1525,11 +1723,12 @@
   scheduleNextPoll();
   startEventsFeed();
 
-  // Deep link support: /?room=lobby opens that room's messages immediately.
   (function(){
     try{
-      var requested = new URLSearchParams(window.location.search).get("room");
-      if(requested) openRoomMessages(requested);
+      var params = new URLSearchParams(window.location.search);
+      var requested = params.get("room");
+      var requestedMsg = params.get("msg");
+      if(requested) openRoomMessages(requested, requestedMsg);
     } catch(e){}
   })();
 })();
