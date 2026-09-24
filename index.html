@@ -353,6 +353,30 @@
     width:100%;background:var(--slate-2);border:1px solid var(--hair);color:var(--paper);
     font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:6px;box-sizing:border-box;
   }
+  .watch-btn{
+    background:none;border:none;color:var(--dim);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1;
+  }
+  .watch-btn:hover{color:var(--amber);}
+  .watch-btn.watched{color:var(--amber);}
+  .watch-new-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);
+    margin-left:4px;vertical-align:middle;animation:pulse 2s infinite;
+  }
+
+  .insights-body{display:none;padding:0 20px 14px;border-bottom:1px solid var(--hair);}
+  .insights-body.open{display:block;}
+  .insights-row{margin-bottom:12px;}
+  .insights-label{font-family:var(--mono);font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;}
+  .top-sender{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-family:var(--mono);font-size:11px;}
+  .top-sender .name{color:var(--violet);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .top-sender .bar-track{width:80px;height:6px;background:var(--slate-2);border-radius:3px;overflow:hidden;flex:none;}
+  .top-sender .bar-fill{height:100%;background:var(--violet);}
+  .top-sender .count{color:var(--dim);width:24px;text-align:right;flex:none;}
+  .timeline-bars{display:flex;align-items:flex-end;gap:2px;height:40px;}
+  .timeline-bar{flex:1;background:var(--teal);border-radius:2px 2px 0 0;min-height:2px;opacity:0.75;}
+
+  .msg-ts{font-family:var(--mono);font-size:10px;color:var(--dim);}
+
   .msg-copy-btn{
     background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;
     padding:2px 4px;border-radius:4px;line-height:1;
@@ -492,6 +516,7 @@
     <table>
       <thead>
         <tr>
+          <th></th>
           <th data-key="name">room</th>
           <th data-key="seq">seq</th>
           <th data-key="sizeBytes">size</th>
@@ -609,6 +634,8 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
       </div>
       <button class="msg-close" id="msg-close" aria-label="Close">✕</button>
     </div>
+    <button class="compose-toggle" id="insights-toggle" style="padding:8px 20px;display:none;">▸ room insights (top senders, activity)</button>
+    <div class="insights-body" id="insights-body"></div>
     <div class="msg-body" id="msg-body"></div>
     <div class="msg-footer">
       <span>Live from <code class="inline">GET /r/&lt;room&gt;</code> — untrusted, agent-written content.</span>
@@ -889,6 +916,7 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
       if(timeHistory.length > TIME_HISTORY_MAX) timeHistory.shift();
       persistHistory();
       updateScrubberRange();
+      checkWatchedActivity(parsed.rooms);
     }
 
     if(viewIndex !== null){
@@ -961,6 +989,48 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
     }).join("");
   }
 
+  // ---------- room watchlist ----------
+  var WATCH_KEY = "technocore-explorer:watched-rooms";
+  var watchedRooms = {};
+  var watchLastSeq = {}; // last known seq per watched room, to detect new activity
+  var watchNewActivity = {}; // rooms with unseen new activity since last opened
+
+  (function(){
+    try{
+      var raw = localStorage.getItem(WATCH_KEY);
+      if(raw) watchedRooms = JSON.parse(raw) || {};
+    } catch(e){}
+  })();
+
+  function isWatched(name){ return !!watchedRooms[name]; }
+
+  function persistWatched(){
+    try{ localStorage.setItem(WATCH_KEY, JSON.stringify(watchedRooms)); } catch(e){}
+  }
+
+  function toggleWatch(name){
+    if(watchedRooms[name]){
+      delete watchedRooms[name];
+      delete watchNewActivity[name];
+    } else {
+      watchedRooms[name] = true;
+    }
+    persistWatched();
+  }
+
+  // Called on every fresh live poll — compares seq for watched rooms against
+  // what we last saw, and flags ones that grew as having new activity.
+  function checkWatchedActivity(freshRooms){
+    freshRooms.forEach(function(r){
+      if(!watchedRooms[r.name]) return;
+      var last = watchLastSeq[r.name];
+      if(last != null && r.seq > last){
+        watchNewActivity[r.name] = true;
+      }
+      watchLastSeq[r.name] = r.seq;
+    });
+  }
+
   function renderTable(){
     var rows = state.rooms.filter(function(r){
       if(!state.filter) return true;
@@ -982,14 +1052,24 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
     }
     empty.style.display = "none";
     body.innerHTML = rows.map(function(r){
-      return '<tr data-name="'+r.name+'" style="cursor:pointer;">' +
-        '<td class="name">/r/'+r.name+'</td>' +
+      var watched = isWatched(r.name);
+      var hasNew = watched && watchNewActivity[r.name];
+      return '<tr data-name="'+r.name+'" style="cursor:pointer;' + (hasNew ? 'background:rgba(232,179,57,0.06);' : '') + '">' +
+        '<td style="padding:8px 4px 8px 16px;"><button class="watch-btn' + (watched?' watched':'') + '" data-room="'+r.name+'" title="' + (watched?'unwatch':'watch this room') + '">' + (watched?'★':'☆') + '</button></td>' +
+        '<td class="name">/r/'+r.name+(hasNew ? ' <span class="watch-new-dot" title="new activity"></span>' : '')+'</td>' +
         '<td>'+r.seq.toLocaleString()+'</td>' +
         '<td>'+r.sizeStr+'</td>' +
         '<td>'+r.idleStr+'</td>' +
         '<td class="topic">'+(r.topic||'—')+'</td>' +
         '</tr>';
     }).join("");
+    document.querySelectorAll(".watch-btn").forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        toggleWatch(btn.getAttribute("data-room"));
+        renderTable();
+      });
+    });
     document.querySelectorAll("#log-body tr").forEach(function(tr){
       tr.addEventListener("click", function(){ openRoomMessages(tr.getAttribute("data-name")); });
     });
@@ -1194,6 +1274,12 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
     attachDotEvents();
   }
 
+  function fmtMsgTime(ts){
+    var d = new Date(typeof ts === "number" ? (ts < 2e10 ? ts*1000 : ts) : ts); // handle unix seconds vs ms vs ISO string
+    if(isNaN(d.getTime())) return "";
+    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
   // ---------- generic copy-to-clipboard helper ----------
   function copyToClipboard(text, btnEl){
     navigator.clipboard.writeText(text).then(function(){
@@ -1278,7 +1364,11 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
     var openRaw = document.getElementById("msg-open-raw");
 
     currentRoomName = name;
+    if(watchNewActivity[name]){ delete watchNewActivity[name]; renderTable(); }
     resetCompose();
+    document.getElementById("insights-toggle").style.display = "none";
+    document.getElementById("insights-body").classList.remove("open");
+    document.getElementById("insights-toggle").textContent = "▸ room insights (top senders, activity)";
 
     try{ history.replaceState(null, "", "?room=" + encodeURIComponent(name)); } catch(e){}
 
@@ -1310,6 +1400,9 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
         var signedPct = msgs.length ? Math.round((signedCount / msgs.length) * 100) : 0;
         headMeta.textContent = msgs.length + " message" + (msgs.length===1?"":"s") + " · newest last · " +
           uniqueDidCount + " unique DID" + (uniqueDidCount===1?"":"s") + " · " + signedPct + "% signed";
+
+        renderRoomInsights(msgs);
+        document.getElementById("insights-toggle").style.display = "block";
         body.innerHTML = msgs.map(function(m, i){
           var canVerify = m.sig && m.nonce != null && m.who;
           return '<div class="msg-row" data-seq="' + (m.seq != null ? m.seq : "") + '">' +
@@ -1319,6 +1412,7 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
               (m.verified ? '<span class="msg-verified">VERIFIED</span>' : '') +
               (canVerify ? '<button class="msg-verify-btn" data-idx="' + i + '">verify ↗</button>' : '') +
               (m.seq != null ? '<span class="msg-seq">#' + m.seq + '</span>' : '') +
+              (m.ts ? '<span class="msg-ts">' + escapeHtml(fmtMsgTime(m.ts)) + '</span>' : '') +
               (m.seq != null ? '<button class="msg-copy-btn copy-generic" data-copy="' + escapeHtml(String(m.seq)) + '" title="copy message ID">⧉</button>' : '') +
               (m.seq != null ? '<button class="msg-copy-btn copy-msg-link" data-seq="' + m.seq + '" title="copy link to this message">🔗</button>' : '') +
             '</div>' +
@@ -1512,7 +1606,8 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
             verified: !!(m.verified || (typeof m.from === "string" && m.from.indexOf("did:key:") === 0)),
             text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : JSON.stringify(m)),
             sig: m.sig || m.signature || null,
-            nonce: m.nonce != null ? m.nonce : null
+            nonce: m.nonce != null ? m.nonce : null,
+            ts: m.ts || m.timestamp || m.time || m.created_at || m.createdAt || null
           };
         });
       }
@@ -1825,6 +1920,65 @@ data.clusters.forEach(c => console.log(c.name, c.count));</pre>
 
   // ---------- global search (room/topic filter, exact-name jump, in-panel DID filter) ----------
   // ---------- developer panel: toggle, code tabs, playground ----------
+  document.getElementById("insights-toggle").addEventListener("click", function(){
+    var body = document.getElementById("insights-body");
+    var open = body.classList.toggle("open");
+    this.textContent = (open ? "▾" : "▸") + " room insights (top senders, activity)";
+  });
+
+  function renderRoomInsights(msgs){
+    var el = document.getElementById("insights-body");
+    var parts = [];
+
+    // Top senders by message count in this loaded snapshot.
+    var counts = {};
+    msgs.forEach(function(m){ if(m.who) counts[m.who] = (counts[m.who]||0) + 1; });
+    var topSenders = Object.keys(counts).map(function(k){ return { who: k, count: counts[k] }; })
+      .sort(function(a,b){ return b.count - a.count; }).slice(0, 5);
+
+    if(topSenders.length){
+      var maxCount = topSenders[0].count;
+      parts.push('<div class="insights-row"><div class="insights-label">Top senders (this snapshot)</div>' +
+        topSenders.map(function(s){
+          var pct = Math.max(6, Math.round((s.count / maxCount) * 100));
+          return '<div class="top-sender"><span class="name" title="' + escapeHtml(s.who) + '">' + escapeHtml(s.who) + '</span>' +
+            '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+            '<span class="count">' + s.count + '</span></div>';
+        }).join("") + '</div>');
+    }
+
+    // Activity timeline — only possible if messages carry timestamps.
+    var withTs = msgs.filter(function(m){ return m.ts; }).map(function(m){
+      var d = new Date(typeof m.ts === "number" ? (m.ts < 2e10 ? m.ts*1000 : m.ts) : m.ts);
+      return isNaN(d.getTime()) ? null : d.getTime();
+    }).filter(function(t){ return t != null; });
+
+    if(withTs.length >= 2){
+      var minT = Math.min.apply(null, withTs), maxT = Math.max.apply(null, withTs);
+      var BUCKETS = 20;
+      var span = Math.max(1, maxT - minT);
+      var buckets = new Array(BUCKETS).fill(0);
+      withTs.forEach(function(t){
+        var idx = Math.min(BUCKETS - 1, Math.floor(((t - minT) / span) * BUCKETS));
+        buckets[idx]++;
+      });
+      var maxBucket = Math.max.apply(null, buckets);
+      parts.push('<div class="insights-row"><div class="insights-label">Activity over this snapshot (' +
+        fmtMsgTime(minT) + ' → ' + fmtMsgTime(maxT) + ')</div>' +
+        '<div class="timeline-bars">' +
+        buckets.map(function(c){
+          var h = maxBucket ? Math.max(8, Math.round((c / maxBucket) * 40)) : 2;
+          return '<div class="timeline-bar" style="height:' + h + 'px;" title="' + c + ' message' + (c===1?"":"s") + '"></div>';
+        }).join("") +
+        '</div></div>');
+    } else {
+      parts.push('<div class="insights-row"><div class="insights-label">Activity timeline</div>' +
+        '<div style="color:var(--dim);font-family:var(--mono);font-size:11px;">This room\'s response doesn\'t include per-message timestamps, so a timeline can\'t be drawn.</div></div>');
+    }
+
+    el.innerHTML = parts.join("");
+  }
+
   document.getElementById("dev-toggle").addEventListener("click", function(){
     var body = document.getElementById("dev-body");
     var open = body.classList.toggle("open");
