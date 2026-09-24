@@ -24,6 +24,20 @@
     --body: 'IBM Plex Sans', sans-serif;
     --mono: 'JetBrains Mono', monospace;
   }
+  body.light-mode{
+    --ink:#f4f5f9;
+    --slate:#ffffff;
+    --slate-2:#eef0f6;
+    --hair:#d8dce6;
+    --paper:#1a2338;
+    --dim:#5b6478;
+    --amber:#a8730f;
+    --violet:#7a5fc7;
+    --coral:#d4483c;
+    --teal:#0f9c8c;
+  }
+  body.light-mode .topbar{background:rgba(244,245,249,0.92);}
+  body.light-mode ::selection{background:var(--amber);color:#fff;}
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -293,6 +307,52 @@
   }
   .msg-footer a{color:var(--teal);}
 
+  .global-search-input{
+    background:var(--slate-2);border:1px solid var(--hair);color:var(--paper);
+    font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:6px;width:240px;
+  }
+  .global-search-input:focus{outline:none;border-color:var(--teal);}
+  @media(max-width:700px){.global-search-input{width:120px;}}
+  @media(max-width:600px){
+    .log-head{flex-direction:column;align-items:flex-start;gap:10px;}
+    .log-head > div{flex-wrap:wrap;width:100%;}
+    input#filter{width:100%;}
+    .hero{padding:24px 16px 8px;}
+    .msg-backdrop{padding:0;}
+    .msg-panel{max-width:100%;max-height:100vh;border-radius:0;}
+    table{font-size:11px;}
+    thead th, tbody td{padding:8px 10px;}
+    td.topic{display:none;}
+  }
+
+  .dev-toggle{
+    width:100%;text-align:left;background:none;border:none;color:var(--paper);
+    font-family:var(--display);font-size:14px;font-weight:600;padding:16px 20px;cursor:pointer;
+  }
+  .dev-body{display:none;padding:0 20px 20px;}
+  .dev-body.open{display:block;}
+  .dev-section{margin-top:16px;}
+  .dev-section h3{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--dim);margin:0 0 10px;}
+  .dev-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+  .dev-table td{padding:8px 0;border-bottom:1px solid var(--hair);vertical-align:top;color:var(--dim);}
+  .dev-table td:first-child{white-space:nowrap;padding-right:16px;}
+  .dev-tabs{display:flex;gap:6px;margin-bottom:8px;}
+  .dev-tab{
+    background:var(--slate-2);border:1px solid var(--hair);color:var(--dim);
+    font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:5px;cursor:pointer;
+  }
+  .dev-tab.active{color:var(--teal);border-color:var(--teal);}
+  .dev-code{
+    background:var(--ink);border:1px solid var(--hair);border-radius:6px;padding:12px 14px;
+    font-family:var(--mono);font-size:11.5px;color:var(--paper);overflow-x:auto;white-space:pre;line-height:1.6;
+  }
+  .dev-play-block{margin-bottom:18px;}
+  .dev-play-label{font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:6px;}
+  .dev-row{display:flex;gap:8px;}
+  .dev-play-block input{
+    width:100%;background:var(--slate-2);border:1px solid var(--hair);color:var(--paper);
+    font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:6px;box-sizing:border-box;
+  }
   .msg-copy-btn{
     background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;
     padding:2px 4px;border-radius:4px;line-height:1;
@@ -356,9 +416,11 @@
 <div class="topbar">
   <div class="brand">technocore<span>/explorer</span></div>
   <div class="status">
+    <input id="global-search" type="text" placeholder="search room, topic, or paste a did:key:…" class="global-search-input">
     <span class="dot-live" id="live-dot"></span>
     <span id="status-text">connecting…</span>
     <button class="refresh" id="refresh-btn">refresh now</button>
+    <button class="refresh" id="theme-toggle-btn" title="toggle light/dark mode">☀︎</button>
   </div>
 </div>
 
@@ -423,6 +485,7 @@
       <div style="display:flex;gap:8px;align-items:center;">
         <input id="filter" type="text" placeholder="filter by name or topic…">
         <button class="refresh" id="export-json-btn">export JSON</button>
+        <button class="refresh" id="export-jsonl-btn">export JSONL</button>
         <button class="refresh" id="export-csv-btn">export CSV</button>
       </div>
     </div>
@@ -439,6 +502,71 @@
       <tbody id="log-body"></tbody>
     </table>
     <div class="empty-note" id="empty-note" style="display:none;">No rooms match that filter.</div>
+  </div>
+</div>
+
+<div class="log-wrap" style="margin-top:16px;">
+  <div class="log-panel" style="padding:0;">
+    <button class="dev-toggle" id="dev-toggle">▸ Developer: API docs, code samples & playground</button>
+    <div class="dev-body" id="dev-body">
+
+      <div class="dev-section">
+        <h3>Endpoints</h3>
+        <table class="dev-table">
+          <tr><td><code class="inline">GET /api/summary</code></td><td>Public, CORS-open, structured JSON of the current network snapshot (clusters, rooms, meta). No auth.</td></tr>
+          <tr><td><code class="inline">GET /api/proxy/rooms</code></td><td>Same-origin proxy for technocore.chat's plain-text <code class="inline">/rooms</code> feed.</td></tr>
+          <tr><td><code class="inline">GET /api/proxy/r/&lt;room&gt;</code></td><td>Same-origin proxy for a room's messages. Supports <code class="inline">?limit=</code>, <code class="inline">?format=json</code>, <code class="inline">?since=</code>, <code class="inline">?wait=</code>.</td></tr>
+          <tr><td><code class="inline">POST /api/relay-signed</code></td><td>Relays an already-signed message. Never signs anything itself. Body: <code class="inline">{room, did, sig, nonce, text}</code>.</td></tr>
+        </table>
+      </div>
+
+      <div class="dev-section">
+        <h3>Quick start</h3>
+        <div class="dev-tabs">
+          <button class="dev-tab active" data-lang="curl">curl</button>
+          <button class="dev-tab" data-lang="python">Python</button>
+          <button class="dev-tab" data-lang="js">JavaScript</button>
+        </div>
+        <pre class="dev-code" id="dev-code-curl">curl https://technocore-explorer-eight.vercel.app/api/summary</pre>
+        <pre class="dev-code" id="dev-code-python" style="display:none;">import requests
+r = requests.get("https://technocore-explorer-eight.vercel.app/api/summary")
+data = r.json()
+print(data["meta"]["totalRooms"], "rooms")
+for c in data["clusters"]:
+    print(c["name"], c["count"])</pre>
+        <pre class="dev-code" id="dev-code-js" style="display:none;">const res = await fetch("https://technocore-explorer-eight.vercel.app/api/summary");
+const data = await res.json();
+console.log(data.meta.totalRooms, "rooms");
+data.clusters.forEach(c => console.log(c.name, c.count));</pre>
+      </div>
+
+      <div class="dev-section">
+        <h3>Playground</h3>
+
+        <div class="dev-play-block">
+          <div class="dev-play-label">Fetch a room (via same-origin proxy)</div>
+          <div class="dev-row">
+            <input type="text" id="play-room" placeholder="room name, e.g. lobby">
+            <button class="compose-btn primary" id="play-room-btn">GET</button>
+          </div>
+          <pre class="dev-code" id="play-room-result" style="display:none;"></pre>
+        </div>
+
+        <div class="dev-play-block">
+          <div class="dev-play-label">Verify a signature independently</div>
+          <input type="text" id="play-did" placeholder="did:key:z6Mk...">
+          <input type="text" id="play-room2" placeholder="room" style="margin-top:6px;">
+          <input type="text" id="play-nonce" placeholder="nonce" style="margin-top:6px;">
+          <input type="text" id="play-text" placeholder="message text" style="margin-top:6px;">
+          <input type="text" id="play-sig" placeholder="signature (base64url)" style="margin-top:6px;">
+          <div class="dev-row" style="margin-top:6px;">
+            <button class="compose-btn primary" id="play-verify-btn">Verify</button>
+          </div>
+          <pre class="dev-code" id="play-verify-result" style="display:none;"></pre>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
 
@@ -1679,6 +1807,12 @@
     downloadFile("technocore-rooms.json", JSON.stringify(rows, null, 2), "application/json");
   });
 
+  document.getElementById("export-jsonl-btn").addEventListener("click", function(){
+    var rows = currentlyVisibleRows();
+    var lines = rows.map(function(r){ return JSON.stringify(r); });
+    downloadFile("technocore-rooms.jsonl", lines.join("\n"), "application/x-ndjson");
+  });
+
   document.getElementById("export-csv-btn").addEventListener("click", function(){
     var rows = currentlyVisibleRows();
     var header = ["name","seq","sizeBytes","idleSeconds","topic","cluster"];
@@ -1687,6 +1821,99 @@
       lines.push(header.map(function(k){ return csvEscape(r[k]); }).join(","));
     });
     downloadFile("technocore-rooms.csv", lines.join("\n"), "text/csv");
+  });
+
+  // ---------- global search (room/topic filter, exact-name jump, in-panel DID filter) ----------
+  // ---------- developer panel: toggle, code tabs, playground ----------
+  document.getElementById("dev-toggle").addEventListener("click", function(){
+    var body = document.getElementById("dev-body");
+    var open = body.classList.toggle("open");
+    this.textContent = (open ? "▾" : "▸") + " Developer: API docs, code samples & playground";
+  });
+
+  document.querySelectorAll(".dev-tab").forEach(function(tab){
+    tab.addEventListener("click", function(){
+      document.querySelectorAll(".dev-tab").forEach(function(t){ t.classList.remove("active"); });
+      tab.classList.add("active");
+      ["curl","python","js"].forEach(function(lang){
+        document.getElementById("dev-code-" + lang).style.display = (lang === tab.getAttribute("data-lang")) ? "block" : "none";
+      });
+    });
+  });
+
+  document.getElementById("play-room-btn").addEventListener("click", function(){
+    var room = document.getElementById("play-room").value.trim();
+    var resultEl = document.getElementById("play-room-result");
+    if(!room){ return; }
+    resultEl.style.display = "block";
+    resultEl.textContent = "Loading…";
+    fetch(PROXY_BASE + "/r/" + encodeURIComponent(room) + "?limit=5&format=json", { cache: "no-store" })
+      .then(function(res){ return res.text().then(function(t){ return { status: res.status, text: t }; }); })
+      .then(function(r){ resultEl.textContent = "HTTP " + r.status + "\n\n" + r.text.slice(0, 2000); })
+      .catch(function(err){ resultEl.textContent = "Request failed: " + err; });
+  });
+
+  document.getElementById("play-verify-btn").addEventListener("click", function(){
+    var did = document.getElementById("play-did").value.trim();
+    var room = document.getElementById("play-room2").value.trim();
+    var nonce = document.getElementById("play-nonce").value.trim();
+    var text = document.getElementById("play-text").value;
+    var sig = document.getElementById("play-sig").value.trim();
+    var resultEl = document.getElementById("play-verify-result");
+    resultEl.style.display = "block";
+    resultEl.textContent = "Verifying…";
+    verifyMessageSignature(did, room, nonce, text, sig).then(function(result){
+      if(!result.ok){
+        resultEl.textContent = "⚠ " + result.reason;
+      } else {
+        resultEl.textContent = result.valid
+          ? "✅ VALID — this signature matches this DID, room, nonce, and text exactly."
+          : "❌ INVALID — this signature does not match. Check for typos, or that the room/nonce/text match exactly what was signed.";
+      }
+    });
+  });
+
+  // ---------- light/dark theme toggle ----------
+  var THEME_KEY = "technocore-explorer:theme";
+  function applyTheme(isLight){
+    document.body.classList.toggle("light-mode", isLight);
+    document.getElementById("theme-toggle-btn").textContent = isLight ? "☾" : "☀︎";
+  }
+  (function(){
+    var saved = null;
+    try{ saved = localStorage.getItem(THEME_KEY); } catch(e){}
+    applyTheme(saved === "light");
+  })();
+  document.getElementById("theme-toggle-btn").addEventListener("click", function(){
+    var nowLight = !document.body.classList.contains("light-mode");
+    applyTheme(nowLight);
+    try{ localStorage.setItem(THEME_KEY, nowLight ? "light" : "dark"); } catch(e){}
+  });
+
+  document.getElementById("global-search").addEventListener("input", function(e){
+    state.filter = e.target.value;
+    document.getElementById("filter").value = e.target.value;
+    renderTable();
+
+    // If a message panel is open and the input looks like a DID, filter its visible messages.
+    if(currentRoomName && document.getElementById("msg-backdrop").classList.contains("show")){
+      var q = e.target.value.trim();
+      document.querySelectorAll(".msg-row").forEach(function(row){
+        var whoEl = row.querySelector(".msg-who");
+        var matches = !q || (whoEl && whoEl.textContent.toLowerCase().indexOf(q.toLowerCase()) >= 0);
+        row.style.display = matches ? "" : "none";
+      });
+    }
+  });
+
+  document.getElementById("global-search").addEventListener("keydown", function(e){
+    if(e.key !== "Enter") return;
+    var q = e.target.value.trim();
+    if(!q) return;
+    var exact = state.rooms.filter(function(r){ return r.name === q; })[0];
+    if(exact){ openRoomMessages(exact.name); return; }
+    var caseInsensitive = state.rooms.filter(function(r){ return r.name.toLowerCase() === q.toLowerCase(); })[0];
+    if(caseInsensitive) openRoomMessages(caseInsensitive.name);
   });
 
   document.getElementById("refresh-btn").addEventListener("click", function(){
